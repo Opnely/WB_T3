@@ -112,6 +112,7 @@ func (s *Service) Update(req string, ctx context.Context) error {
     return s.Db.Update(d, ctx)
 }
 
+// Time for a peacock to roar.
 // Создать новую переменную Service.
 func NewModel(db Database) (Model, error) {
     return &Service{Db: db}, nil
