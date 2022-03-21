@@ -23,6 +23,8 @@ const (
 
 	PORT      = ":33890"
 	TYPE_JSON = "application/json"
+
+	INFO = `{"name": "employees", "version":"1.0.0"}`
 )
 
 // Структура сервер
@@ -38,6 +40,7 @@ func (r *Router) MakeRoutes() {
 	r.R.HandleFunc("/api/v1/get_id/{id}", r.HandleGetId).Methods("GET")
 	r.R.HandleFunc("/api/v1/remove/{id}", r.HandleRemove).Methods("DELETE")
 	r.R.HandleFunc("/api/v1/update", r.HandleUpdate).Methods("PUT")
+	r.R.HandleFunc("/tech/info", r.HandleTechInfo).Methods("GET")
 }
 
 // Запустить сервер
@@ -169,6 +172,14 @@ func (r *Router) HandleUpdate(w http.ResponseWriter, req *http.Request) {
 	}
 	if err := r.M.Update(buf.String(), req.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+}
+
+func (r *Router) HandleTechInfo(w http.ResponseWriter, req *http.Request) {
+	_, err := w.Write([]byte(INFO))
+	if err != nil {
+		log.Printf("Write: %v\n", err)
 		return
 	}
 }

@@ -16,11 +16,12 @@ import (
 )
 
 const (
-	ADD     = "/api/v1/add"
-	GET_ALL = "/api/v1/get_all"
-	GET_ID  = "/api/v1/get_id/"
-	REMOVE  = "/api/v1/remove/"
-	UPDATE  = "/api/v1/update"
+	ADD       = "/api/v1/add"
+	GET_ALL   = "/api/v1/get_all"
+	GET_ID    = "/api/v1/get_id/"
+	REMOVE    = "/api/v1/remove/"
+	UPDATE    = "/api/v1/update"
+	TECH_INFO = "/tech/info"
 
 	URL = "http://localhost" + PORT
 )
@@ -48,7 +49,7 @@ func TestRouterAdd(t *testing.T) {
 		json, content string
 		status        int
 	}{
-		{"", "none", http.StatusBadRequest},                      // не application/json
+		{"", "none", http.StatusBadRequest},                      // не json
 		{"", "application/json", http.StatusInternalServerError}, // "" JSON
 		{t1, "application/json", http.StatusCreated},             // успех
 	}
@@ -287,7 +288,7 @@ func TestRouterAll(t *testing.T) {
 func makeRequest(method, url, ct string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
-		return nil, fmt.Errorf("http.NewRequest: %v\n", err)
+		return nil, fmt.Errorf("http.NewRequest: %v", err)
 	}
 	req.Header.Set("Content-Type", ct)
 	client := &http.Client{}
@@ -331,4 +332,27 @@ func getLastId() (int, error) {
 		}
 	}
 	return id, nil
+}
+
+func TestHandleTechInfo(t *testing.T) {
+	assert := assert.New(t)
+	resp, err := makeRequest("GET", URL+TECH_INFO, "", nil)
+	if err != nil {
+		t.Logf("makeRequest: %v\n", err)
+		return
+	}
+	// 1. Проверить statusCode в результате
+	if resp.StatusCode != http.StatusOK {
+		t.Logf("StatusCode: %v\n", resp.StatusCode)
+		return
+	}
+	// 2. Проверить результат
+	var buf bytes.Buffer
+	_, err = io.Copy(&buf, resp.Body)
+	if err != nil {
+		t.Logf("io.Copy: %v\n", err)
+		return
+	}
+	resp.Body.Close()
+	assert.Equal(INFO, buf.String(), "%q != %q\n", INFO, buf.String())
 }
