@@ -1,7 +1,7 @@
 // Интерфейс для манипулирования базой данных postgreSQL.
 // Соединение осуществляется с помощью pgxpool.
 
-package service
+package main
 
 import (
 	"context"

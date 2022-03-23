@@ -1,7 +1,7 @@
 // Запуск сервера и RESTful API.
 // В случае неудачной обработки запроса, вернуть ошибку в формате RFC 7807.
 
-package service
+package main
 
 import (
 	"bytes"

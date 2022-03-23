@@ -1,6 +1,6 @@
 // Интерфейс для манипуляции и передачи данных базы данных.
 
-package service
+package main
 
 import (
 	"context"
