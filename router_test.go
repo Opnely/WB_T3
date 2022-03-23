@@ -32,9 +32,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("NewRouter: %v\n", err)
 	}
-	router.MakeRoutes()
 	go router.Start()
-
 	log.Println("Ожидание запуска сервера")
 	time.Sleep(2 * time.Second)
 

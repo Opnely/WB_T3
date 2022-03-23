@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+    "log"
 )
 
 const (
@@ -49,6 +50,7 @@ func (s *Service) Add(req string, ctx context.Context) error {
 
 // Закрыть соединение с базой данных
 func (s *Service) Close() {
+    log.Println("Закрытие соединения с базой данных")
 	s.Db.Close()
 }
 

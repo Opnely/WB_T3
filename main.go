@@ -11,7 +11,5 @@ func main() {
 	if err != nil {
 		log.Fatalf("NewRouter: %v\n", err)
 	}
-	router.MakeRoutes()
-	log.Println("Запуск сервера")
 	router.Start()
 }

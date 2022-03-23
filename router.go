@@ -5,11 +5,15 @@ package main
 
 import (
 	"bytes"
+    "context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+    "os"
+    "os/signal"
+    "syscall"
 	"strconv"
 
 	"github.com/gorilla/mux"
@@ -21,6 +25,7 @@ const (
 	NO_CONTENT_ERROR = "Записей не найдено"
 	UNKNOWN_ERROR    = "Неизвестный статус ошибки"
 
+    ADDRESS = "localhost"
 	PORT      = ":33890"
 	TYPE_JSON = "application/json"
 
@@ -31,6 +36,7 @@ const (
 type Router struct {
 	M Model
 	R *mux.Router
+    Srv http.Server
 }
 
 // Установить функции для обработки запросов.
@@ -45,7 +51,22 @@ func (r *Router) MakeRoutes() {
 
 // Запустить сервер
 func (r *Router) Start() {
-	log.Fatal(http.ListenAndServe(PORT, r.R))
+	r.MakeRoutes()
+    go func() {
+        shutdownCh := make(chan os.Signal, 1)
+        signal.Notify(shutdownCh, syscall.SIGINT, syscall.SIGTERM)
+        <-shutdownCh
+        if err := r.Shutdown(context.Background()); err != nil {
+            log.Fatal(err)
+        }
+    }()
+    log.Printf("Запуск сервера на %s%s\n", ADDRESS, PORT)
+	log.Fatal(r.Srv.ListenAndServe())
+}
+
+func (r *Router) Shutdown(ctx context.Context) error {
+    r.M.Close()
+    return r.Srv.Shutdown(ctx)
 }
 
 // Обработать запрос добавления данных в модель.
@@ -186,12 +207,17 @@ func (r *Router) HandleTechInfo(w http.ResponseWriter, req *http.Request) {
 
 // Создать новую переменную Router.
 func NewRouter() (*Router, error) {
+    var r Router
 	m, err := NewModel()
 	if err != nil {
 		return nil, fmt.Errorf("NewModel: %v\n", err)
 	}
+    r.M = m
+    r.R = mux.NewRouter()
+    r.Srv.Addr = ADDRESS + PORT
+    r.Srv.Handler = r.R
 
-	return &Router{M: m, R: mux.NewRouter()}, nil
+	return &r, nil
 }
 
 // Проверить content-type запроса.
