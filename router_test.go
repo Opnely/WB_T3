@@ -23,7 +23,7 @@ const (
 	UPDATE    = "/api/v1/update"
 	TECH_INFO = "/tech/info"
 
-	URL = "http://localhost" + PORT
+    EMPLOYEES_URL = SERVER_URL + API_PATH
 )
 
 // Запустить сервер
@@ -48,14 +48,14 @@ func TestRouterAdd(t *testing.T) {
 		status        int
 	}{
 		{"", "none", http.StatusBadRequest},                      // не json
-		{"", "application/json", http.StatusInternalServerError}, // "" JSON
+		{"", "application/json", http.StatusBadRequest}, // "" JSON
 		{t1, "application/json", http.StatusCreated},             // успех
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
 		// 1. Сделать запрос
 		buf := bytes.NewBuffer([]byte(test.json))
-		resp, err := makeRequest("POST", URL+ADD, test.content, buf)
+		resp, err := makeRequest("POST", EMPLOYEES_URL, test.content, buf)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
 			continue
@@ -75,7 +75,7 @@ func TestRouterGetAll(t *testing.T) {
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
-		resp, err := makeRequest("GET", URL+GET_ALL, "", nil)
+		resp, err := makeRequest("GET", EMPLOYEES_URL, "", nil)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
 			continue
@@ -115,7 +115,7 @@ func TestRouterGetId(t *testing.T) {
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
-		resp, err := makeRequest("GET", URL+GET_ID+test.id, "", nil)
+		resp, err := makeRequest("GET", EMPLOYEES_URL + "/"+test.id, "", nil)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
 			continue
@@ -159,7 +159,7 @@ func TestRouterRemove(t *testing.T) {
 			}
 			test.id = strconv.Itoa(id)
 		}
-		resp, err := makeRequest("DELETE", URL+REMOVE+test.id, "", nil)
+		resp, err := makeRequest("DELETE", EMPLOYEES_URL+"/"+test.id, "", nil)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
 			continue
@@ -179,15 +179,15 @@ func TestRouterUpdate(t *testing.T) {
 		json, content string
 		status        int
 	}{
-		{"", "none", http.StatusBadRequest},                      // не application/json
-		{"", "application/json", http.StatusInternalServerError}, // "" JSON
+		{"", "none", http.StatusBadRequest},                      // не json
+		{"", "application/json", http.StatusBadRequest}, // "" JSON
 		{t1, "application/json", http.StatusInternalServerError}, // нет id
 		{t2, "application/json", http.StatusOK},                  // успех
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
 		buf := bytes.NewBuffer([]byte(test.json))
-		resp, err := makeRequest("PUT", URL+UPDATE, test.content, buf)
+		resp, err := makeRequest("PUT", EMPLOYEES_URL, test.content, buf)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
 			continue
@@ -208,7 +208,7 @@ func TestRouterAll(t *testing.T) {
 
 	// 1. Создать новую запись.
 	buf := bytes.NewBuffer([]byte(t1))
-	resp, err := makeRequest("POST", URL+ADD, "application/json", buf)
+	resp, err := makeRequest("POST", EMPLOYEES_URL, "application/json", buf)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
 		return
@@ -232,7 +232,7 @@ func TestRouterAll(t *testing.T) {
 	}
 	t2 += `"id":` + idstr + "}"
 	buf3 := bytes.NewBuffer([]byte(t2))
-	resp, err = makeRequest("PUT", URL+UPDATE, "application/json", buf3)
+	resp, err = makeRequest("PUT", EMPLOYEES_URL, "application/json", buf3)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
 		return
@@ -244,7 +244,7 @@ func TestRouterAll(t *testing.T) {
 	}
 
 	// 4. Проверить изменение записи.
-	resp, err = makeRequest("GET", URL+GET_ID+idstr, "", nil)
+	resp, err = makeRequest("GET", EMPLOYEES_URL+"/"+idstr, "", nil)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
 		return
@@ -269,7 +269,7 @@ func TestRouterAll(t *testing.T) {
 	}
 
 	// 5. Удалить запись
-	resp2, err := makeRequest("DELETE", URL+REMOVE+idstr, "", nil)
+	resp2, err := makeRequest("DELETE", EMPLOYEES_URL + "/"+idstr, "", nil)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
 		return
@@ -298,7 +298,7 @@ func makeRequest(method, url, ct string, body io.Reader) (*http.Response, error)
 // Считать все записи, выбрать последний добавленный id методом сравнения.
 func getLastId() (int, error) {
 	// 1. Получить все записи.
-	req, err := http.NewRequest("GET", URL+GET_ALL, nil)
+	req, err := http.NewRequest("GET", EMPLOYEES_URL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("http.NewRequest: %v", err)
 	}
@@ -334,7 +334,7 @@ func getLastId() (int, error) {
 
 func TestHandleTechInfo(t *testing.T) {
 	assert := assert.New(t)
-	resp, err := makeRequest("GET", URL+TECH_INFO, "", nil)
+	resp, err := makeRequest("GET", SERVER_URL+TECH_INFO, "", nil)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
 		return

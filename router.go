@@ -7,6 +7,7 @@ import (
 	"bytes"
     "context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"log"
@@ -26,8 +27,10 @@ const (
 	UNKNOWN_ERROR    = "Неизвестный статус ошибки"
 
     ADDRESS = "localhost"
+    API_PATH = "/api/v1/employees"
 	PORT      = ":33890"
 	TYPE_JSON = "application/json"
+    SERVER_URL = "http://" + ADDRESS + PORT
 
 	INFO = `{"name": "employees", "version":"1.0.0"}`
 )
@@ -41,12 +44,12 @@ type Router struct {
 
 // Установить функции для обработки запросов.
 func (r *Router) MakeRoutes() {
-	r.R.HandleFunc("/api/v1/add", r.HandleAdd).Methods("POST")
-	r.R.HandleFunc("/api/v1/get_all", r.HandleGetAll).Methods("GET")
-	r.R.HandleFunc("/api/v1/get_id/{id}", r.HandleGetId).Methods("GET")
-	r.R.HandleFunc("/api/v1/remove/{id}", r.HandleRemove).Methods("DELETE")
-	r.R.HandleFunc("/api/v1/update", r.HandleUpdate).Methods("PUT")
-	r.R.HandleFunc("/tech/info", r.HandleTechInfo).Methods("GET")
+	r.R.HandleFunc(API_PATH, r.AddEmployee).Methods("POST")
+	r.R.HandleFunc(API_PATH, r.GetAllEmployees).Methods("GET")
+	r.R.HandleFunc(API_PATH + "/{id}", r.GetEmployeeById).Methods("GET")
+	r.R.HandleFunc(API_PATH + "/{id}", r.RemoveEmployee).Methods("DELETE")
+	r.R.HandleFunc(API_PATH, r.UpdateEmployee).Methods("PUT")
+	r.R.HandleFunc("/tech/info", r.GetTechInfo).Methods("GET")
 }
 
 // Запустить сервер
@@ -56,6 +59,7 @@ func (r *Router) Start() {
         shutdownCh := make(chan os.Signal, 1)
         signal.Notify(shutdownCh, syscall.SIGINT, syscall.SIGTERM)
         <-shutdownCh
+        close(shutdownCh)
         if err := r.Shutdown(context.Background()); err != nil {
             log.Fatal(err)
         }
@@ -64,6 +68,7 @@ func (r *Router) Start() {
 	log.Fatal(r.Srv.ListenAndServe())
 }
 
+// Завершить работу сервера. Закрыть переменную модель.
 func (r *Router) Shutdown(ctx context.Context) error {
     r.M.Close()
     return r.Srv.Shutdown(ctx)
@@ -71,7 +76,7 @@ func (r *Router) Shutdown(ctx context.Context) error {
 
 // Обработать запрос добавления данных в модель.
 // В случае успеха вернуть код 201.
-func (r *Router) HandleAdd(w http.ResponseWriter, req *http.Request) {
+func (r *Router) AddEmployee(w http.ResponseWriter, req *http.Request) {
 	// 1. Проверить запрос
 	if !isJson(req) {
 		writeErr(w, http.StatusBadRequest, "тип запроса не JSON")
@@ -79,10 +84,15 @@ func (r *Router) HandleAdd(w http.ResponseWriter, req *http.Request) {
 	}
 	// 2. Выполнить запрос
 	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, req.Body); err != nil {
+	n, err := io.Copy(&buf, req.Body)
+    if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
-	}
+	} else if n == 0 {
+		writeErr(w, http.StatusBadRequest, ("тело не задано"))
+		return
+    }
+
 	if err := r.M.Add(buf.String(), req.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -94,7 +104,7 @@ func (r *Router) HandleAdd(w http.ResponseWriter, req *http.Request) {
 // Обработать запрос чтения всех данных из модели.
 // Логировать ошибку записи ответа.
 // В случае успеха вернуть данные в формате JSON.
-func (r *Router) HandleGetAll(w http.ResponseWriter, req *http.Request) {
+func (r *Router) GetAllEmployees(w http.ResponseWriter, req *http.Request) {
 	// 1. Сделать запрос
 	data, err := r.M.GetAll(req.Context())
 	if err != nil {
@@ -104,13 +114,25 @@ func (r *Router) HandleGetAll(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	// 2. Перекодировать результат запроса в JSON и вернуть клиенту
-	datajson, err := json.Marshal(data)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	_, err = w.Write(datajson)
+	// 2. Перекодировать результат запроса в JSON или XML и вернуть клиенту
+    var convData []byte
+    switch req.Header.Get("Accept") {
+    case "application/xml": // кодировать в XML
+        convData, err = xml.Marshal(data)
+        if err != nil {
+            writeErr(w, http.StatusInternalServerError, err.Error())
+            return
+        }
+        w.Header().Set("Content-Type", "application/xml")
+    default: // кодировать в JSON
+        convData, err = json.Marshal(data)
+        if err != nil {
+            writeErr(w, http.StatusInternalServerError, err.Error())
+            return
+        }
+        w.Header().Set("Content-Type", "application/json")
+    }
+	_, err = w.Write(convData)
 	if err != nil {
 		log.Printf("Write: %v\n", err)
 		return
@@ -120,7 +142,7 @@ func (r *Router) HandleGetAll(w http.ResponseWriter, req *http.Request) {
 // Запросить данные из модели с переданным аргументом id.
 // Логировать ошибку записи ответа.
 // В случае успеха вернуть данные в формате JSON.
-func (r *Router) HandleGetId(w http.ResponseWriter, req *http.Request) {
+func (r *Router) GetEmployeeById(w http.ResponseWriter, req *http.Request) {
 	// 1. Проверить переданные данные
 	vars := mux.Vars(req)
 	idstr, ok := vars["id"]
@@ -155,9 +177,18 @@ func (r *Router) HandleGetId(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// Вернуть данные о программе
+func (r *Router) GetTechInfo(w http.ResponseWriter, req *http.Request) {
+	_, err := w.Write([]byte(INFO))
+	if err != nil {
+		log.Printf("Write: %v\n", err)
+		return
+	}
+}
+
 // Удалить данные из модели.
 // В случае успеха вернуть код 200.
-func (r *Router) HandleRemove(w http.ResponseWriter, req *http.Request) {
+func (r *Router) RemoveEmployee(w http.ResponseWriter, req *http.Request) {
 	// 1. Проверить переданные данные
 	vars := mux.Vars(req)
 	idstr, ok := vars["id"]
@@ -179,7 +210,7 @@ func (r *Router) HandleRemove(w http.ResponseWriter, req *http.Request) {
 
 // Заменить данные модели.
 // В случае успеха вернуть код 200.
-func (r *Router) HandleUpdate(w http.ResponseWriter, req *http.Request) {
+func (r *Router) UpdateEmployee(w http.ResponseWriter, req *http.Request) {
 	// 1. Проверить запрос
 	if !isJson(req) {
 		writeErr(w, http.StatusBadRequest, "тип запроса не JSON")
@@ -187,23 +218,21 @@ func (r *Router) HandleUpdate(w http.ResponseWriter, req *http.Request) {
 	}
 	// 2. Выполнить запрос
 	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, req.Body); err != nil {
+	n, err := io.Copy(&buf, req.Body)
+    if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
-	}
+	} else if n == 0 {
+		writeErr(w, http.StatusBadRequest, ("тело не задано"))
+		return
+    }
+
 	if err := r.M.Update(buf.String(), req.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 }
 
-func (r *Router) HandleTechInfo(w http.ResponseWriter, req *http.Request) {
-	_, err := w.Write([]byte(INFO))
-	if err != nil {
-		log.Printf("Write: %v\n", err)
-		return
-	}
-}
 
 // Создать новую переменную Router.
 func NewRouter() (*Router, error) {
