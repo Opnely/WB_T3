@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"log"
@@ -55,7 +56,9 @@ func TestRouterAdd(t *testing.T) {
 	for i, test := range tests {
 		// 1. Сделать запрос
 		buf := bytes.NewBuffer([]byte(test.json))
-		resp, err := makeRequest("POST", EMPLOYEES_URL, test.content, buf)
+        req := &Request{Method: "POST", URL: EMPLOYEES_URL, Body: buf }
+        req.ContentType = test.content
+		resp, err := makeRequest(req)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
 			continue
@@ -70,12 +73,16 @@ func TestRouterAdd(t *testing.T) {
 // Тесты запроса считывания всех записей.
 // Ожидается, что число элементов в базе данных больше нуля.
 func TestRouterGetAll(t *testing.T) {
-	var tests = []struct{ status int }{
-		{http.StatusOK}, // успех
+	var tests = []struct{acceptHeader string; status int}{
+		{"", http.StatusBadRequest}, // отсутствует accept Header
+		{"application/json", http.StatusOK}, // успех
+		{"application/xml", http.StatusOK}, // успех
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
-		resp, err := makeRequest("GET", EMPLOYEES_URL, "", nil)
+        req := &Request{Method: "GET", URL: EMPLOYEES_URL}
+        req.AcceptHeader = test.acceptHeader
+		resp, err := makeRequest(req)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
 			continue
@@ -93,10 +100,21 @@ func TestRouterGetAll(t *testing.T) {
 		}
 		resp.Body.Close()
 		var d []Data
-		if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
-			t.Logf("json.Unmarshal: %v\n", err)
-			continue
-		}
+        switch v := resp.Header.Get("Content-Type"); v {
+        case "application/json":
+            if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
+                t.Logf("json.Unmarshal: %v\n", err)
+                continue
+            }
+        case "application/xml":
+            if err := xml.Unmarshal(buf.Bytes(), &d); err != nil {
+                t.Logf("xml.Unmarshal: %v\n", err)
+                continue
+            }
+        default:
+            t.Logf("Неожиданный http.Response Content-Type: %v\n", v)
+            continue
+        }
 		assert.Less(0, len(d), "Тест %d\n", i)
 	}
 }
@@ -115,7 +133,8 @@ func TestRouterGetId(t *testing.T) {
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
-		resp, err := makeRequest("GET", EMPLOYEES_URL + "/"+test.id, "", nil)
+        req := &Request{Method: "GET", URL: EMPLOYEES_URL + "/" + test.id}
+		resp, err := makeRequest(req)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
 			continue
@@ -159,7 +178,8 @@ func TestRouterRemove(t *testing.T) {
 			}
 			test.id = strconv.Itoa(id)
 		}
-		resp, err := makeRequest("DELETE", EMPLOYEES_URL+"/"+test.id, "", nil)
+        req := &Request{Method: "DELETE", URL: EMPLOYEES_URL + "/" + test.id}
+		resp, err := makeRequest(req)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
 			continue
@@ -187,7 +207,9 @@ func TestRouterUpdate(t *testing.T) {
 	assert := assert.New(t)
 	for i, test := range tests {
 		buf := bytes.NewBuffer([]byte(test.json))
-		resp, err := makeRequest("PUT", EMPLOYEES_URL, test.content, buf)
+        req := &Request{Method: "PUT", URL: EMPLOYEES_URL, Body: buf}
+        req.ContentType = test.content
+		resp, err := makeRequest(req)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
 			continue
@@ -208,7 +230,9 @@ func TestRouterAll(t *testing.T) {
 
 	// 1. Создать новую запись.
 	buf := bytes.NewBuffer([]byte(t1))
-	resp, err := makeRequest("POST", EMPLOYEES_URL, "application/json", buf)
+    req := &Request{Method: "POST", URL: EMPLOYEES_URL, Body: buf}
+    req.ContentType = "application/json"
+	resp, err := makeRequest(req)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
 		return
@@ -232,7 +256,9 @@ func TestRouterAll(t *testing.T) {
 	}
 	t2 += `"id":` + idstr + "}"
 	buf3 := bytes.NewBuffer([]byte(t2))
-	resp, err = makeRequest("PUT", EMPLOYEES_URL, "application/json", buf3)
+    req = &Request{Method: "PUT", URL: EMPLOYEES_URL, Body: buf3}
+    req.ContentType = "application/json"
+	resp, err = makeRequest(req)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
 		return
@@ -244,7 +270,9 @@ func TestRouterAll(t *testing.T) {
 	}
 
 	// 4. Проверить изменение записи.
-	resp, err = makeRequest("GET", EMPLOYEES_URL+"/"+idstr, "", nil)
+    req = &Request{Method: "GET", URL: EMPLOYEES_URL+"/"+idstr, Body: nil}
+    req.ContentType = ""
+	resp, err = makeRequest(req)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
 		return
@@ -269,7 +297,9 @@ func TestRouterAll(t *testing.T) {
 	}
 
 	// 5. Удалить запись
-	resp2, err := makeRequest("DELETE", EMPLOYEES_URL + "/"+idstr, "", nil)
+    req = &Request{Method: "DELETE", URL: EMPLOYEES_URL+"/"+idstr, Body: nil}
+    req.ContentType = ""
+	resp2, err := makeRequest(req)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
 		return
@@ -281,14 +311,23 @@ func TestRouterAll(t *testing.T) {
 	}
 }
 
+type Request struct {
+    Body io.Reader
+    AcceptHeader string
+    ContentType string
+    Method string
+    URL string
+}
+
 // Сделать запрос.
 // Вернуть адрес перемнной ответа и ошибку.
-func makeRequest(method, url, ct string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequest(method, url, body)
+func makeRequest(r *Request) (*http.Response, error) {
+	req, err := http.NewRequest(r.Method, r.URL, r.Body)
 	if err != nil {
 		return nil, fmt.Errorf("http.NewRequest: %v", err)
 	}
-	req.Header.Set("Content-Type", ct)
+	req.Header.Set("Content-Type", r.ContentType)
+	req.Header.Set("Accept-Encoding", r.AcceptHeader)
 	client := &http.Client{}
 
 	return client.Do(req)
@@ -298,15 +337,21 @@ func makeRequest(method, url, ct string, body io.Reader) (*http.Response, error)
 // Считать все записи, выбрать последний добавленный id методом сравнения.
 func getLastId() (int, error) {
 	// 1. Получить все записи.
-	req, err := http.NewRequest("GET", EMPLOYEES_URL, nil)
+    req := &Request{Method: "GET", URL: EMPLOYEES_URL}
+    req.AcceptHeader = "application/json"
+	resp, err := makeRequest(req)
 	if err != nil {
-		return 0, fmt.Errorf("http.NewRequest: %v", err)
+		return 0, fmt.Errorf("makeRequest: %v\n", err)
 	}
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("Do: %v", err)
-	}
+	//req, err := http.NewRequest("GET", EMPLOYEES_URL, nil)
+	//if err != nil {
+	//	return 0, fmt.Errorf("http.NewRequest: %v", err)
+	//}
+	//client := &http.Client{}
+	//resp, err := client.Do(req)
+	//if err != nil {
+	//	return 0, fmt.Errorf("Do: %v", err)
+	//}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("StatusCode: %v", resp.StatusCode)
@@ -334,7 +379,8 @@ func getLastId() (int, error) {
 
 func TestHandleTechInfo(t *testing.T) {
 	assert := assert.New(t)
-	resp, err := makeRequest("GET", SERVER_URL+TECH_INFO, "", nil)
+    req := &Request{Method: "GET", URL: SERVER_URL + TECH_INFO}
+	resp, err := makeRequest(req)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
 		return

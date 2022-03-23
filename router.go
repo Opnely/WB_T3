@@ -45,7 +45,7 @@ type Router struct {
 // Установить функции для обработки запросов.
 func (r *Router) MakeRoutes() {
 	r.R.HandleFunc(API_PATH, r.AddEmployee).Methods("POST")
-	r.R.HandleFunc(API_PATH, r.GetAllEmployees).Methods("GET")
+	r.R.HandleFunc(API_PATH, accept(r.GetAllEmployees)).Methods("GET")
 	r.R.HandleFunc(API_PATH + "/{id}", r.GetEmployeeById).Methods("GET")
 	r.R.HandleFunc(API_PATH + "/{id}", r.RemoveEmployee).Methods("DELETE")
 	r.R.HandleFunc(API_PATH, r.UpdateEmployee).Methods("PUT")
@@ -72,6 +72,22 @@ func (r *Router) Start() {
 func (r *Router) Shutdown(ctx context.Context) error {
     r.M.Close()
     return r.Srv.Shutdown(ctx)
+}
+
+// Вернуть middleware функцию.
+// Проверить, что Accept header запроса - XML или JSON.
+// Иначе вернуть ошибку.
+func accept(f http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        switch r.Header.Get("Accept-Encoding") {
+        case "application/json": // OK
+        case "application/xml": // OK
+        default: // не OK
+            writeErr(w, http.StatusBadRequest, "не XML/JSON Accept header")
+            return
+        }
+        f(w, r)
+    }
 }
 
 // Обработать запрос добавления данных в модель.
@@ -103,9 +119,9 @@ func (r *Router) AddEmployee(w http.ResponseWriter, req *http.Request) {
 
 // Обработать запрос чтения всех данных из модели.
 // Логировать ошибку записи ответа.
-// В случае успеха вернуть данные в формате JSON.
+// В случае успеха вернуть данные в формате JSON или XML.
 func (r *Router) GetAllEmployees(w http.ResponseWriter, req *http.Request) {
-	// 1. Сделать запрос
+	// 1. Сделать запрос.
 	data, err := r.M.GetAll(req.Context())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -114,25 +130,27 @@ func (r *Router) GetAllEmployees(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	// 2. Перекодировать результат запроса в JSON или XML и вернуть клиенту
-    var convData []byte
-    switch req.Header.Get("Accept") {
-    case "application/xml": // кодировать в XML
-        convData, err = xml.Marshal(data)
-        if err != nil {
-            writeErr(w, http.StatusInternalServerError, err.Error())
-            return
-        }
-        w.Header().Set("Content-Type", "application/xml")
-    default: // кодировать в JSON
-        convData, err = json.Marshal(data)
-        if err != nil {
+    // 2. Перекодировать запрос в формат, соответствующий header Accept.
+    var buf bytes.Buffer // конвертированные данные
+    switch req.Header.Get("Accept-Encoding") {
+    case "application/json":
+        if err := json.NewEncoder(&buf).Encode(data); err != nil {
             writeErr(w, http.StatusInternalServerError, err.Error())
             return
         }
         w.Header().Set("Content-Type", "application/json")
+    case "application/xml":
+        if err := xml.NewEncoder(&buf).Encode(data); err != nil {
+            writeErr(w, http.StatusInternalServerError, err.Error())
+            return
+        }
+        w.Header().Set("Content-Type", "application/xml")
+    default:
+        writeErr(w, http.StatusBadRequest, "не XML/JSON accept header")
+        return
     }
-	_, err = w.Write(convData)
+    // 3. Записать данные клиенту
+	_, err = w.Write(buf.Bytes())
 	if err != nil {
 		log.Printf("Write: %v\n", err)
 		return
