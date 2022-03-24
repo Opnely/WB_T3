@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"testing"
@@ -13,14 +14,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var _ = bytes.NewBuffer
+
 // 1. Тестовые структуры
 // 1.1 Тестовая бд
-type MockDb struct {
+type MockPgdb struct {
 	Rows []string // содержимое таблиц базы данных
 }
 
 // Добавить строку в базу данных. Функция не взаимодействует в m.Rows.
-func (m *MockDb) Add(d Data, _ context.Context) error {
+func (m *MockPgdb) HireEmployee(d Data, _ context.Context) error {
 	if d.FirstName == "" {
 		return fmt.Errorf("пустое имя")
 	} else if d.FirstName == "John" {
@@ -29,30 +32,40 @@ func (m *MockDb) Add(d Data, _ context.Context) error {
 	return nil
 }
 
-func (m *MockDb) Close() {
+func (m *MockPgdb) Close() {
 }
 
 // Считать строку из базы данных. Вернуть поле в интерфейсе Rows и ошибку.
-func (m *MockDb) GetId(id int, _ context.Context) (Rows, error) {
+func (m *MockPgdb) GetEmployee(id int, _ context.Context) (Rows, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("id < 1")
 	} else if id == 1 {
 		return NewMockRows([]string{m.Rows[0]}), nil
+	} else if id == 9999 {
+		return nil, nil // id не существует
 	}
 	return NewMockRows(nil), nil
 }
 
 // Считать все строки из базы данных. Вернуть поля в интерфейсе Rows и ошибку.
-func (m *MockDb) GetAll(_ context.Context) (Rows, error) {
+func (m *MockPgdb) GetAllEmployees(_ context.Context) (Rows, error) {
 	return NewMockRows(m.Rows), nil
 }
 
-func (m *MockDb) GetHighestId(_ context.Context) (int, error) {
+func (m *MockPgdb) GetAllEmployeeNames(_ context.Context) (Rows, error) {
+	return NewMockRows(m.Rows), nil
+}
+
+func (m *MockPgdb) GetAllEmployeeNonNames(_ context.Context) (Rows, error) {
+	return NewMockRows(m.Rows), nil
+}
+
+func (m *MockPgdb) GetHighestId(_ context.Context) (int, error) {
 	return 0, nil
 }
 
 // Удалить строку из базы данных. Функция не взаимодействует в m.Rows.
-func (m *MockDb) Remove(id int, _ context.Context) error {
+func (m *MockPgdb) FireEmployee(id int, _ context.Context) error {
 	if id == 0 {
 		return fmt.Errorf("id < 1")
 	} else if id == 1 {
@@ -62,7 +75,7 @@ func (m *MockDb) Remove(id int, _ context.Context) error {
 }
 
 // Удалить строку в базе данных. Функция не взаимодействует в m.Rows.
-func (m *MockDb) Update(d Data, _ context.Context) error {
+func (m *MockPgdb) UpdateEmployee(d Data, _ context.Context) error {
 	if d.FirstName == "" {
 		return fmt.Errorf("пустое имя")
 	} else if d.FirstName == "John" {
@@ -71,9 +84,9 @@ func (m *MockDb) Update(d Data, _ context.Context) error {
 	return nil
 }
 
-// Создать переменную типа MockDb. Вернуть её адрес.
-func NewMockDb() *MockDb {
-	return &MockDb{Rows: []string{"1", "2"}}
+// Создать переменную типа MockPgdb. Вернуть её адрес.
+func NewMockPgdb() *MockPgdb {
+	return &MockPgdb{Rows: []string{"1", "2"}}
 }
 
 // 1.2 Тестовый результат запроса бд
@@ -95,17 +108,15 @@ func (r *MockRows) Next() bool {
 }
 
 // Используется в тесте для извлечения id.
+// Тест учитывает порядок аргументов, установленный в функциях
+// GetAllEmployees и GetEmployee.
 func (r *MockRows) Scan(dest ...interface{}) error {
-	_, err := fmt.Sscanf(r.Rows[r.Idx], "%d", dest[0])
+	_, err := fmt.Sscanf(r.Rows[r.Idx], "%d", dest[2])
 	if err != nil {
 		return err
 	}
 	r.Idx++
 	return nil
-}
-
-func (r *MockRows) Values() ([]interface{}, error) {
-	return nil, nil
 }
 
 // Создать новую переменную структуры MockRows. Вернуть как интерфейс Rows.
@@ -115,7 +126,7 @@ func NewMockRows(rows []string) Rows {
 
 // 2. Тесты
 // Тесты добавления записи в базу данных.
-func TestAdd(t *testing.T) {
+func TestModelHireEmployee(t *testing.T) {
 	var tests = []struct {
 		json string
 		err  bool
@@ -127,31 +138,31 @@ func TestAdd(t *testing.T) {
 	}
 	assert := assert.New(t)
 	service, _ := NewModel()
-	service.ChangeDatabase(NewMockDb())
+	service.ChangeDatabase(NewMockPgdb())
 	for i, test := range tests {
-		err := service.Add(test.json, context.Background())
-		assert.Equal(test.err, err != nil, "Add[%d]: %v\n", i, err)
+		err := service.HireEmployee(test.json, context.Background())
+		assert.Equal(test.err, err != nil, "Тест %d: %v\n", i, err)
 	}
 }
 
 // Тесты считывания всех строк из базы данных.
-func TestGetAll(t *testing.T) {
+func TestModelGetAllEmployees(t *testing.T) {
 	var tests = []struct{ err bool }{
 		{false}, // успех
 	}
 	assert := assert.New(t)
 	service, _ := NewModel()
-	service.ChangeDatabase(NewMockDb())
+	service.ChangeDatabase(NewMockPgdb())
 	for i, test := range tests {
-		_, err := service.GetAll(context.Background())
+		_, err := service.GetAllEmployees(context.Background())
 		assert.Equal(test.err, err != nil, "Тест %d: %v\n", i, err)
 	}
 }
 
 // Тесты получения записи по id.
-// Параметр out = false, если результат функции GetId = nil.
-// Параметр err = true, если функция GetId возвращает ошибку.
-func TestGetId(t *testing.T) {
+// Параметр out = false, если результат функции GetEmployee = nil.
+// Параметр err = true, если функция GetEmployee возвращает ошибку.
+func TestModelGetEmployee(t *testing.T) {
 	var tests = []struct {
 		id       int
 		out, err bool
@@ -162,9 +173,9 @@ func TestGetId(t *testing.T) {
 	}
 	assert := assert.New(t)
 	service, _ := NewModel()
-	service.ChangeDatabase(NewMockDb())
+	service.ChangeDatabase(NewMockPgdb())
 	for i, test := range tests {
-		d, err := service.GetId(test.id, context.Background())
+		d, err := service.GetEmployee(test.id, context.Background())
 		if err != nil {
 			assert.Equal(test.err, true, "Тест %d: %v\n", i, err)
 			continue
@@ -176,8 +187,8 @@ func TestGetId(t *testing.T) {
 	}
 }
 
-// Тесты фукнции удаления строки.
-func TestRemove(t *testing.T) {
+// Тесты функции удаления строки.
+func TestModelFireEmployee(t *testing.T) {
 	var tests = []struct {
 		id  int
 		err bool
@@ -188,15 +199,15 @@ func TestRemove(t *testing.T) {
 	}
 	assert := assert.New(t)
 	service, _ := NewModel()
-	service.ChangeDatabase(NewMockDb())
+	service.ChangeDatabase(NewMockPgdb())
 	for i, test := range tests {
-		err := service.Remove(test.id, context.Background())
-		assert.Equal(test.err, err != nil, "Remove[%d]: %v\n", i, err)
+		err := service.FireEmployee(test.id, context.Background())
+		assert.Equal(test.err, err != nil, "Тест %d: %v\n", i, err)
 	}
 }
 
 // Тесты обновления записи в базе данных.
-func TestUpdate(t *testing.T) {
+func TestModelUpdateEmployee(t *testing.T) {
 	var tests = []struct {
 		json string
 		err  bool
@@ -208,9 +219,9 @@ func TestUpdate(t *testing.T) {
 	}
 	assert := assert.New(t)
 	service, _ := NewModel()
-	service.ChangeDatabase(NewMockDb())
+	service.ChangeDatabase(NewMockPgdb())
 	for i, test := range tests {
-		err := service.Update(test.json, context.Background())
-		assert.Equal(test.err, err != nil, "Update[%d]: %v\n", i, err)
+		err := service.UpdateEmployee(test.json, context.Background())
+		assert.Equal(test.err, err != nil, "Тест %d: %v\n", i, err)
 	}
 }

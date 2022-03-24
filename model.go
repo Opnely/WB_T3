@@ -6,7 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-    "log"
+	"log"
+	"sync"
 )
 
 const (
@@ -26,47 +27,49 @@ type Data struct {
 
 // Абстракция структуры Service
 type Model interface {
-	Add(string, context.Context) error
-	ChangeDatabase(Database)
+	ChangeDatabase(Postgresdb)
 	Close()
-	GetAll(context.Context) ([]Data, error)
-	GetId(int, context.Context) (*Data, error)
-	Remove(int, context.Context) error
-	Update(string, context.Context) error
+	FireEmployee(int, context.Context) error
+	GetAllEmployees(context.Context) ([]Data, error)
+	GetAllEmployeesConcur(context.Context) ([]Data, error)
+	GetEmployee(int, context.Context) (*Data, error)
+	HireEmployee(string, context.Context) error
+	UpdateEmployee(string, context.Context) error
 }
 
 type Service struct {
-	Db Database // интерфейс для работы с базой данных
+	Pgdb Postgresdb // интерфейс для работы с базой данных postgresdb
 }
 
 // Добавить перекодированную в Data строку JSON в базу данных.
-func (s *Service) Add(req string, ctx context.Context) error {
+func (s *Service) HireEmployee(req string, ctx context.Context) error {
 	var d Data
 	if err := json.Unmarshal([]byte(req), &d); err != nil {
 		return err
 	}
-	return s.Db.Add(d, ctx)
+	return s.Pgdb.HireEmployee(d, ctx)
 }
 
 // Закрыть соединение с базой данных
 func (s *Service) Close() {
-    log.Println("Закрытие соединения с базой данных")
-	s.Db.Close()
+	log.Println("Закрытие соединения с базой данных")
+	s.Pgdb.Close()
 }
 
 // Вернуть адрес структуры Data с данными по id из базы данных.
 // Если функция возвращает (nil, nil), запрос выполнен успешно, но данных не
 // найдено.
-func (s *Service) GetId(id int, ctx context.Context) (*Data, error) {
-	rows, err := s.Db.GetId(id, ctx)
+func (s *Service) GetEmployee(id int, ctx context.Context) (*Data, error) {
+	rows, err := s.Pgdb.GetEmployee(id, ctx)
 	if err != nil {
 		return nil, err
 	}
+	if rows == nil { // данных не найдено
+		return nil, nil
+	}
 	var d Data
-	var count int
 	for rows.Next() {
-		count++
-		err := rows.Scan(&d.Id, &d.LastName, &d.FirstName, &d.MidName,
+		err := rows.Scan(&d.FirstName, &d.LastName, &d.Id, &d.MidName,
 			&d.PhoneNum, &d.Position, &d.DoneJobs)
 		if err != nil {
 			return nil, fmt.Errorf("Scan: %v", err)
@@ -75,22 +78,21 @@ func (s *Service) GetId(id int, ctx context.Context) (*Data, error) {
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
-	if count == 0 { // данных не найдено
-		return nil, nil
-	}
 	return &d, nil
 }
 
 // Вернуть срез структур Data со всеми данными из базы данных.
-func (s *Service) GetAll(ctx context.Context) ([]Data, error) {
-	rows, err := s.Db.GetAll(ctx)
+func (s *Service) GetAllEmployees(ctx context.Context) ([]Data, error) {
+	rows, err := s.Pgdb.GetAllEmployees(ctx)
 	if err != nil {
 		return nil, err
+	} else if rows == nil { // данных не найдено
+		return nil, nil
 	}
 	slice := make([]Data, 0, MIN_ENTRIES)
 	for rows.Next() {
 		var d Data
-		err := rows.Scan(&d.Id, &d.LastName, &d.FirstName, &d.MidName,
+		err := rows.Scan(&d.FirstName, &d.LastName, &d.Id, &d.MidName,
 			&d.PhoneNum, &d.Position, &d.DoneJobs)
 		if err != nil {
 			return nil, fmt.Errorf("Scan: %v", err)
@@ -100,30 +102,92 @@ func (s *Service) GetAll(ctx context.Context) ([]Data, error) {
 	return slice, nil
 }
 
+// Вернуть срез структур Data со всеми данными из базы данных.
+// Считать данные конкурентно используя две функции.
+func (s *Service) GetAllEmployeesConcur(ctx context.Context) ([]Data, error) {
+	var wg sync.WaitGroup
+	var goerr error // ошибка в горутине
+	names := make(map[int][2]string)
+
+	// 1. Считать имя и фамилию в карту
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		var rows Rows
+		rows, goerr = s.Pgdb.GetAllEmployeeNames(ctx)
+		if goerr != nil {
+			return
+		} else if rows == nil { // данных не найдено
+			return // вне горутины ожидается такая же ошибка
+		}
+		for rows.Next() {
+			var id int
+			var fname, lname string
+			goerr = rows.Scan(&fname, &lname, &id)
+			if goerr != nil {
+				return
+			}
+			names[id] = [2]string{fname, lname}
+		}
+	}()
+	// 2. Считать данные в срез структур Data
+	rows, err := s.Pgdb.GetAllEmployeeNonNames(ctx)
+	if err != nil {
+		return nil, err
+	} else if rows == nil { // данных не найдено
+		return nil, nil
+	}
+	slice := make([]Data, 0, MIN_ENTRIES)
+	for rows.Next() {
+		var d Data
+		err := rows.Scan(&d.Id, &d.MidName, &d.PhoneNum,
+			&d.Position, &d.DoneJobs)
+		if err != nil {
+			return nil, fmt.Errorf("Scan: %v", err)
+		}
+		slice = append(slice, d)
+	}
+	wg.Wait()
+	if goerr != nil {
+		return nil, fmt.Errorf("%v", goerr)
+	}
+
+	// 3. Добавить данные из карты в срез
+	for i, d := range slice {
+		n, ok := names[d.Id]
+		if !ok {
+			continue
+		}
+		slice[i].FirstName = n[0]
+		slice[i].LastName = n[1]
+	}
+	return slice, nil
+}
+
 // Удалить запись id из базы данных.
-func (s *Service) Remove(id int, ctx context.Context) error {
-	return s.Db.Remove(id, ctx)
+func (s *Service) FireEmployee(id int, ctx context.Context) error {
+	return s.Pgdb.FireEmployee(id, ctx)
 }
 
 // Изменить строку JSON в базе данных. Перекодировать строку в Data.
-func (s *Service) Update(req string, ctx context.Context) error {
+func (s *Service) UpdateEmployee(req string, ctx context.Context) error {
 	var d Data
 	if err := json.Unmarshal([]byte(req), &d); err != nil {
 		return err
 	}
-	return s.Db.Update(d, ctx)
+	return s.Pgdb.UpdateEmployee(d, ctx)
 }
 
 // Изменить базу данных. Используется в тестах.
-func (s *Service) ChangeDatabase(db Database) {
-	s.Db = db
+func (s *Service) ChangeDatabase(db Postgresdb) {
+	s.Pgdb = db
 }
 
 // Создать новую переменную Service.
 func NewModel() (Model, error) {
-	db, err := NewDatabase()
+	db, err := NewPostgresdb()
 	if err != nil {
 		return nil, err
 	}
-	return &Service{Db: db}, nil
+	return &Service{Pgdb: db}, nil
 }

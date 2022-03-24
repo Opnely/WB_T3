@@ -5,17 +5,17 @@ package main
 
 import (
 	"bytes"
-    "context"
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-    "os"
-    "os/signal"
-    "syscall"
+	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 
 	"github.com/gorilla/mux"
 )
@@ -26,28 +26,28 @@ const (
 	NO_CONTENT_ERROR = "Записей не найдено"
 	UNKNOWN_ERROR    = "Неизвестный статус ошибки"
 
-    ADDRESS = "localhost"
-    API_PATH = "/api/v1/employees"
-	PORT      = ":33890"
-	TYPE_JSON = "application/json"
-    SERVER_URL = "http://" + ADDRESS + PORT
+	ADDRESS    = "localhost"
+	API_PATH   = "/api/v1/employees"
+	PORT       = ":33890"
+	TYPE_JSON  = "application/json"
+	SERVER_URL = "http://" + ADDRESS + PORT
 
-	INFO = `{"name": "employees", "version":"1.0.0"}`
+	INFO = `{"name": "employees", "version":"1.4.0"}`
 )
 
 // Структура сервер
 type Router struct {
-	M Model
-	R *mux.Router
-    Srv http.Server
+	M   Model
+	R   *mux.Router
+	Srv http.Server
 }
 
 // Установить функции для обработки запросов.
 func (r *Router) MakeRoutes() {
-	r.R.HandleFunc(API_PATH, r.AddEmployee).Methods("POST")
+	r.R.HandleFunc(API_PATH, r.HireEmployee).Methods("POST")
 	r.R.HandleFunc(API_PATH, accept(r.GetAllEmployees)).Methods("GET")
-	r.R.HandleFunc(API_PATH + "/{id}", r.GetEmployeeById).Methods("GET")
-	r.R.HandleFunc(API_PATH + "/{id}", r.RemoveEmployee).Methods("DELETE")
+	r.R.HandleFunc(API_PATH+"/{id}", r.GetEmployee).Methods("GET")
+	r.R.HandleFunc(API_PATH+"/{id}", r.FireEmployee).Methods("DELETE")
 	r.R.HandleFunc(API_PATH, r.UpdateEmployee).Methods("PUT")
 	r.R.HandleFunc("/tech/info", r.GetTechInfo).Methods("GET")
 }
@@ -55,112 +55,28 @@ func (r *Router) MakeRoutes() {
 // Запустить сервер
 func (r *Router) Start() {
 	r.MakeRoutes()
-    go func() {
-        shutdownCh := make(chan os.Signal, 1)
-        signal.Notify(shutdownCh, syscall.SIGINT, syscall.SIGTERM)
-        <-shutdownCh
-        close(shutdownCh)
-        if err := r.Shutdown(context.Background()); err != nil {
-            log.Fatal(err)
-        }
-    }()
-    log.Printf("Запуск сервера на %s%s\n", ADDRESS, PORT)
+	go func() {
+		shutdownCh := make(chan os.Signal, 1)
+		signal.Notify(shutdownCh, syscall.SIGINT, syscall.SIGTERM)
+		<-shutdownCh
+		close(shutdownCh)
+		if err := r.Shutdown(context.Background()); err != nil {
+			log.Fatal(err)
+		}
+	}()
+	log.Printf("Запуск сервера на %s%s\n", ADDRESS, PORT)
 	log.Fatal(r.Srv.ListenAndServe())
 }
 
 // Завершить работу сервера. Закрыть переменную модель.
 func (r *Router) Shutdown(ctx context.Context) error {
-    r.M.Close()
-    return r.Srv.Shutdown(ctx)
+	r.M.Close()
+	return r.Srv.Shutdown(ctx)
 }
 
-// Вернуть middleware функцию.
-// Проверить, что Accept header запроса - XML или JSON.
-// Иначе вернуть ошибку.
-func accept(f http.HandlerFunc) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        switch r.Header.Get("Accept-Encoding") {
-        case "application/json": // OK
-        case "application/xml": // OK
-        default: // не OK
-            writeErr(w, http.StatusBadRequest, "не XML/JSON Accept header")
-            return
-        }
-        f(w, r)
-    }
-}
-
-// Обработать запрос добавления данных в модель.
-// В случае успеха вернуть код 201.
-func (r *Router) AddEmployee(w http.ResponseWriter, req *http.Request) {
-	// 1. Проверить запрос
-	if !isJson(req) {
-		writeErr(w, http.StatusBadRequest, "тип запроса не JSON")
-		return
-	}
-	// 2. Выполнить запрос
-	var buf bytes.Buffer
-	n, err := io.Copy(&buf, req.Body)
-    if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	} else if n == 0 {
-		writeErr(w, http.StatusBadRequest, ("тело не задано"))
-		return
-    }
-
-	if err := r.M.Add(buf.String(), req.Context()); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	// 3. Вернуть код 201
-	w.WriteHeader(http.StatusCreated)
-}
-
-// Обработать запрос чтения всех данных из модели.
-// Логировать ошибку записи ответа.
-// В случае успеха вернуть данные в формате JSON или XML.
-func (r *Router) GetAllEmployees(w http.ResponseWriter, req *http.Request) {
-	// 1. Сделать запрос.
-	data, err := r.M.GetAll(req.Context())
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	} else if data == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-    // 2. Перекодировать запрос в формат, соответствующий header Accept.
-    var buf bytes.Buffer // конвертированные данные
-    switch req.Header.Get("Accept-Encoding") {
-    case "application/json":
-        if err := json.NewEncoder(&buf).Encode(data); err != nil {
-            writeErr(w, http.StatusInternalServerError, err.Error())
-            return
-        }
-        w.Header().Set("Content-Type", "application/json")
-    case "application/xml":
-        if err := xml.NewEncoder(&buf).Encode(data); err != nil {
-            writeErr(w, http.StatusInternalServerError, err.Error())
-            return
-        }
-        w.Header().Set("Content-Type", "application/xml")
-    default:
-        writeErr(w, http.StatusBadRequest, "не XML/JSON accept header")
-        return
-    }
-    // 3. Записать данные клиенту
-	_, err = w.Write(buf.Bytes())
-	if err != nil {
-		log.Printf("Write: %v\n", err)
-		return
-	}
-}
-
-// Запросить данные из модели с переданным аргументом id.
-// Логировать ошибку записи ответа.
-// В случае успеха вернуть данные в формате JSON.
-func (r *Router) GetEmployeeById(w http.ResponseWriter, req *http.Request) {
+// Удалить данные из модели.
+// В случае успеха вернуть код 200.
+func (r *Router) FireEmployee(w http.ResponseWriter, req *http.Request) {
 	// 1. Проверить переданные данные
 	vars := mux.Vars(req)
 	idstr, ok := vars["id"]
@@ -174,7 +90,86 @@ func (r *Router) GetEmployeeById(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// 2. Сделать запрос
-	data, err := r.M.GetId(id, req.Context())
+	if err := r.M.FireEmployee(id, req.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+}
+
+// Вернуть middleware функцию.
+// Убедиться, что Accept header запроса - XML или JSON.
+// Иначе вернуть ошибку.
+func accept(f http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Accept") {
+		case "application/json": // OK
+		case "application/xml": // OK
+		default: // не OK
+			writeErr(w, http.StatusBadRequest, "не XML/JSON Accept header")
+			return
+		}
+		f(w, r)
+	}
+}
+
+// Обработать запрос чтения всех данных из модели.
+// Логировать ошибку записи ответа.
+// В случае успеха вернуть данные в формате JSON или XML.
+func (r *Router) GetAllEmployees(w http.ResponseWriter, req *http.Request) {
+	// 1. Сделать запрос.
+	data, err := r.M.GetAllEmployees(req.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	} else if data == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	// 2. Перекодировать запрос в формат, соответствующий header Accept.
+	var buf bytes.Buffer // конвертированные данные
+	switch req.Header.Get("Accept") {
+	case "application/json":
+		if err := json.NewEncoder(&buf).Encode(data); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+	case "application/xml":
+		if err := xml.NewEncoder(&buf).Encode(data); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+	default:
+		writeErr(w, http.StatusBadRequest, "не XML/JSON accept header")
+		return
+	}
+	// 3. Записать данные клиенту
+	_, err = w.Write(buf.Bytes())
+	if err != nil {
+		log.Printf("Write: %v\n", err)
+		return
+	}
+}
+
+// Запросить данные из модели с переданным аргументом id.
+// Логировать ошибку записи ответа.
+// В случае успеха вернуть данные в формате JSON.
+func (r *Router) GetEmployee(w http.ResponseWriter, req *http.Request) {
+	// 1. Проверить переданные данные
+	vars := mux.Vars(req)
+	idstr, ok := vars["id"]
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "отсутствует параметр id")
+		return
+	}
+	id, err := strconv.Atoi(idstr)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "плохой параметр id")
+		return
+	}
+	// 2. Сделать запрос
+	data, err := r.M.GetEmployee(id, req.Context())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -195,7 +190,7 @@ func (r *Router) GetEmployeeById(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// Вернуть данные о программе
+// Вернуть данные о программе.
 func (r *Router) GetTechInfo(w http.ResponseWriter, req *http.Request) {
 	_, err := w.Write([]byte(INFO))
 	if err != nil {
@@ -204,26 +199,31 @@ func (r *Router) GetTechInfo(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// Удалить данные из модели.
-// В случае успеха вернуть код 200.
-func (r *Router) RemoveEmployee(w http.ResponseWriter, req *http.Request) {
-	// 1. Проверить переданные данные
-	vars := mux.Vars(req)
-	idstr, ok := vars["id"]
-	if !ok {
-		writeErr(w, http.StatusBadRequest, "отсутствует параметр id")
+// Обработать запрос добавления данных в модель.
+// В случае успеха вернуть код 201.
+func (r *Router) HireEmployee(w http.ResponseWriter, req *http.Request) {
+	// 1. Проверить запрос
+	if !isJson(req) {
+		writeErr(w, http.StatusBadRequest, "тип запроса не JSON")
 		return
 	}
-	id, err := strconv.Atoi(idstr)
+	// 2. Выполнить запрос
+	var buf bytes.Buffer
+	n, err := io.Copy(&buf, req.Body)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "плохой параметр id")
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	} else if n == 0 {
+		writeErr(w, http.StatusBadRequest, ("тело не задано"))
 		return
 	}
-	// 2. Сделать запрос
-	if err := r.M.Remove(id, req.Context()); err != nil {
+
+	if err := r.M.HireEmployee(buf.String(), req.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// 3. Вернуть код 201
+	w.WriteHeader(http.StatusCreated)
 }
 
 // Заменить данные модели.
@@ -237,32 +237,31 @@ func (r *Router) UpdateEmployee(w http.ResponseWriter, req *http.Request) {
 	// 2. Выполнить запрос
 	var buf bytes.Buffer
 	n, err := io.Copy(&buf, req.Body)
-    if err != nil {
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	} else if n == 0 {
 		writeErr(w, http.StatusBadRequest, ("тело не задано"))
 		return
-    }
+	}
 
-	if err := r.M.Update(buf.String(), req.Context()); err != nil {
+	if err := r.M.UpdateEmployee(buf.String(), req.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 }
 
-
 // Создать новую переменную Router.
 func NewRouter() (*Router, error) {
-    var r Router
+	var r Router
 	m, err := NewModel()
 	if err != nil {
 		return nil, fmt.Errorf("NewModel: %v\n", err)
 	}
-    r.M = m
-    r.R = mux.NewRouter()
-    r.Srv.Addr = ADDRESS + PORT
-    r.Srv.Handler = r.R
+	r.M = m
+	r.R = mux.NewRouter()
+	r.Srv.Addr = ADDRESS + PORT
+	r.Srv.Handler = r.R
 
 	return &r, nil
 }

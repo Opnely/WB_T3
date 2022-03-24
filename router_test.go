@@ -17,15 +17,19 @@ import (
 )
 
 const (
-	ADD       = "/api/v1/add"
-	GET_ALL   = "/api/v1/get_all"
-	GET_ID    = "/api/v1/get_id/"
-	REMOVE    = "/api/v1/remove/"
-	UPDATE    = "/api/v1/update"
 	TECH_INFO = "/tech/info"
 
-    EMPLOYEES_URL = SERVER_URL + API_PATH
+	EMPLOYEES_URL = SERVER_URL + API_PATH
 )
+
+// Тип запроса для функции makeRequest
+type Request struct {
+	Body         io.Reader
+	AcceptHeader string
+	ContentType  string
+	Method       string
+	URL          string
+}
 
 // Запустить сервер
 func TestMain(m *testing.M) {
@@ -41,23 +45,23 @@ func TestMain(m *testing.M) {
 }
 
 // Тесты запроса добавления записи.
-func TestRouterAdd(t *testing.T) {
+func TestRouterAddEmployee(t *testing.T) {
 	t1 := `{"name":"A", "last_name":"Al", "patrnonymic":"Ap", "phone":"X",` +
 		`"position":"a", "good_job_count":1}`
 	var tests = []struct {
 		json, content string
 		status        int
 	}{
-		{"", "none", http.StatusBadRequest},                      // не json
+		{"", "none", http.StatusBadRequest},             // не json
 		{"", "application/json", http.StatusBadRequest}, // "" JSON
-		{t1, "application/json", http.StatusCreated},             // успех
+		{t1, "application/json", http.StatusCreated},    // успех
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
 		// 1. Сделать запрос
 		buf := bytes.NewBuffer([]byte(test.json))
-        req := &Request{Method: "POST", URL: EMPLOYEES_URL, Body: buf }
-        req.ContentType = test.content
+		req := &Request{Method: "POST", URL: EMPLOYEES_URL, Body: buf}
+		req.ContentType = test.content
 		resp, err := makeRequest(req)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
@@ -72,16 +76,19 @@ func TestRouterAdd(t *testing.T) {
 
 // Тесты запроса считывания всех записей.
 // Ожидается, что число элементов в базе данных больше нуля.
-func TestRouterGetAll(t *testing.T) {
-	var tests = []struct{acceptHeader string; status int}{
-		{"", http.StatusBadRequest}, // отсутствует accept Header
+func TestRouterGetAllEmployees(t *testing.T) {
+	var tests = []struct {
+		acceptHeader string
+		status       int
+	}{
+		{"", http.StatusBadRequest},         // отсутствует accept Header
 		{"application/json", http.StatusOK}, // успех
-		{"application/xml", http.StatusOK}, // успех
+		{"application/xml", http.StatusOK},  // успех
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
-        req := &Request{Method: "GET", URL: EMPLOYEES_URL}
-        req.AcceptHeader = test.acceptHeader
+		req := &Request{Method: "GET", URL: EMPLOYEES_URL}
+		req.AcceptHeader = test.acceptHeader
 		resp, err := makeRequest(req)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
@@ -90,38 +97,41 @@ func TestRouterGetAll(t *testing.T) {
 		// 1. Проверить код возврата в результате
 		assert.Equal(test.status, resp.StatusCode, "Тест %d\n", i)
 		if resp.StatusCode != http.StatusOK {
+			//io.Copy(os.Stdout, resp.Body)
+			resp.Body.Close()
 			continue
 		}
 		// 2. Проверить результат
 		var buf bytes.Buffer
 		if _, err := io.Copy(&buf, resp.Body); err != nil {
 			t.Logf("io.Copy: %v\n", err)
+			resp.Body.Close()
 			return
 		}
 		resp.Body.Close()
 		var d []Data
-        switch v := resp.Header.Get("Content-Type"); v {
-        case "application/json":
-            if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
-                t.Logf("json.Unmarshal: %v\n", err)
-                continue
-            }
-        case "application/xml":
-            if err := xml.Unmarshal(buf.Bytes(), &d); err != nil {
-                t.Logf("xml.Unmarshal: %v\n", err)
-                continue
-            }
-        default:
-            t.Logf("Неожиданный http.Response Content-Type: %v\n", v)
-            continue
-        }
+		switch v := resp.Header.Get("Content-Type"); v {
+		case "application/json":
+			if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
+				t.Logf("json.Unmarshal: %v\n", err)
+				continue
+			}
+		case "application/xml":
+			if err := xml.Unmarshal(buf.Bytes(), &d); err != nil {
+				t.Logf("xml.Unmarshal: %v\n", err)
+				continue
+			}
+		default:
+			t.Logf("Неожиданный http.Response Content-Type: %v\n", v)
+			continue
+		}
 		assert.Less(0, len(d), "Тест %d\n", i)
 	}
 }
 
 // Тесты запроса считывания записи по id.
 // Проверить результат только по id.
-func TestRouterGetId(t *testing.T) {
+func TestRouterGetEmployee(t *testing.T) {
 	var tests = []struct {
 		id     string
 		status int
@@ -133,7 +143,7 @@ func TestRouterGetId(t *testing.T) {
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
-        req := &Request{Method: "GET", URL: EMPLOYEES_URL + "/" + test.id}
+		req := &Request{Method: "GET", URL: EMPLOYEES_URL + "/" + test.id}
 		resp, err := makeRequest(req)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
@@ -142,6 +152,8 @@ func TestRouterGetId(t *testing.T) {
 		// 1. Проверить statusCode в результате
 		assert.Equal(test.status, resp.StatusCode, "Тест %d\n", i)
 		if resp.StatusCode != http.StatusOK {
+			//io.Copy(os.Stdout, resp.Body)
+			resp.Body.Close()
 			continue
 		}
 		// 2. Проверить id в результате
@@ -159,7 +171,7 @@ func TestRouterGetId(t *testing.T) {
 
 // Тесты запроса удаления записи по id.
 // Перед ожидаемым успешным удалением, найти запись с самым большим id.
-func TestRouterRemove(t *testing.T) {
+func TestRouterRemoveEmployee(t *testing.T) {
 	var tests = []struct {
 		id     string
 		status int
@@ -178,7 +190,7 @@ func TestRouterRemove(t *testing.T) {
 			}
 			test.id = strconv.Itoa(id)
 		}
-        req := &Request{Method: "DELETE", URL: EMPLOYEES_URL + "/" + test.id}
+		req := &Request{Method: "DELETE", URL: EMPLOYEES_URL + "/" + test.id}
 		resp, err := makeRequest(req)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
@@ -190,7 +202,7 @@ func TestRouterRemove(t *testing.T) {
 }
 
 // Тесты запроса обновления записи.
-func TestRouterUpdate(t *testing.T) {
+func TestRouterUpdateEmployee(t *testing.T) {
 	t1 := `{"name":"A", "last_name":"Al", "patrnonymic":"Ap", "phone":"X",` +
 		`"position":"a", "good_job_count":1}`
 	t2 := `{"name":"B", "last_name":"Bl", "patrnonymic":"Bp", "phone":"Y",` +
@@ -200,15 +212,15 @@ func TestRouterUpdate(t *testing.T) {
 		status        int
 	}{
 		{"", "none", http.StatusBadRequest},                      // не json
-		{"", "application/json", http.StatusBadRequest}, // "" JSON
+		{"", "application/json", http.StatusBadRequest},          // "" JSON
 		{t1, "application/json", http.StatusInternalServerError}, // нет id
 		{t2, "application/json", http.StatusOK},                  // успех
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
 		buf := bytes.NewBuffer([]byte(test.json))
-        req := &Request{Method: "PUT", URL: EMPLOYEES_URL, Body: buf}
-        req.ContentType = test.content
+		req := &Request{Method: "PUT", URL: EMPLOYEES_URL, Body: buf}
+		req.ContentType = test.content
 		resp, err := makeRequest(req)
 		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
@@ -219,10 +231,10 @@ func TestRouterUpdate(t *testing.T) {
 	}
 }
 
-// Тест пяти запросов подряд: добавление записи, изменение записи, проверка
-// записи и удаление записи. Считывание всех записей происходит после
+// Тест пяти запросов подряд: добавление записи t1, изменение записи t1 на t2,
+// проверка записи и удаление записи. Считывание всех записей происходит после
 // добавления записи с целью установления её id.
-func TestRouterAll(t *testing.T) {
+func TestRouterAllMethods(t *testing.T) {
 	t1 := `{"name":"A", "last_name":"Al", "patrnonymic":"Ap", "phone":"X",` +
 		`"position":"a", "good_job_count":1}`
 	t2 := `{"name":"B", "last_name":"Bl", "patrnonymic":"Bp", "phone":"Y",` +
@@ -230,8 +242,8 @@ func TestRouterAll(t *testing.T) {
 
 	// 1. Создать новую запись.
 	buf := bytes.NewBuffer([]byte(t1))
-    req := &Request{Method: "POST", URL: EMPLOYEES_URL, Body: buf}
-    req.ContentType = "application/json"
+	req := &Request{Method: "POST", URL: EMPLOYEES_URL, Body: buf}
+	req.ContentType = "application/json"
 	resp, err := makeRequest(req)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
@@ -256,8 +268,8 @@ func TestRouterAll(t *testing.T) {
 	}
 	t2 += `"id":` + idstr + "}"
 	buf3 := bytes.NewBuffer([]byte(t2))
-    req = &Request{Method: "PUT", URL: EMPLOYEES_URL, Body: buf3}
-    req.ContentType = "application/json"
+	req = &Request{Method: "PUT", URL: EMPLOYEES_URL, Body: buf3}
+	req.ContentType = "application/json"
 	resp, err = makeRequest(req)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
@@ -270,8 +282,8 @@ func TestRouterAll(t *testing.T) {
 	}
 
 	// 4. Проверить изменение записи.
-    req = &Request{Method: "GET", URL: EMPLOYEES_URL+"/"+idstr, Body: nil}
-    req.ContentType = ""
+	req = &Request{Method: "GET", URL: EMPLOYEES_URL + "/" + idstr, Body: nil}
+	req.ContentType = ""
 	resp, err = makeRequest(req)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
@@ -294,11 +306,18 @@ func TestRouterAll(t *testing.T) {
 	}
 	if orig != fresh {
 		t.Logf("%v != %v\n", orig, fresh)
+		t.Logf("Orig: %d, %s, %s, %s, %s, %d, %s\n", orig.Id, orig.FirstName,
+			orig.LastName, orig.MidName, orig.PhoneNum, orig.DoneJobs,
+			orig.Position)
+		t.Logf("Orig: %d, %s, %s, %s, %s, %d, %s\n", fresh.Id,
+			fresh.FirstName, fresh.LastName, fresh.MidName, fresh.PhoneNum,
+			fresh.DoneJobs, fresh.Position)
 	}
 
 	// 5. Удалить запись
-    req = &Request{Method: "DELETE", URL: EMPLOYEES_URL+"/"+idstr, Body: nil}
-    req.ContentType = ""
+	req = &Request{Method: "DELETE", URL: EMPLOYEES_URL + "/" + idstr}
+	req.Body = nil
+	req.ContentType = ""
 	resp2, err := makeRequest(req)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)
@@ -311,14 +330,6 @@ func TestRouterAll(t *testing.T) {
 	}
 }
 
-type Request struct {
-    Body io.Reader
-    AcceptHeader string
-    ContentType string
-    Method string
-    URL string
-}
-
 // Сделать запрос.
 // Вернуть адрес перемнной ответа и ошибку.
 func makeRequest(r *Request) (*http.Response, error) {
@@ -327,7 +338,7 @@ func makeRequest(r *Request) (*http.Response, error) {
 		return nil, fmt.Errorf("http.NewRequest: %v", err)
 	}
 	req.Header.Set("Content-Type", r.ContentType)
-	req.Header.Set("Accept-Encoding", r.AcceptHeader)
+	req.Header.Set("Accept", r.AcceptHeader)
 	client := &http.Client{}
 
 	return client.Do(req)
@@ -337,21 +348,12 @@ func makeRequest(r *Request) (*http.Response, error) {
 // Считать все записи, выбрать последний добавленный id методом сравнения.
 func getLastId() (int, error) {
 	// 1. Получить все записи.
-    req := &Request{Method: "GET", URL: EMPLOYEES_URL}
-    req.AcceptHeader = "application/json"
+	req := &Request{Method: "GET", URL: EMPLOYEES_URL}
+	req.AcceptHeader = "application/json"
 	resp, err := makeRequest(req)
 	if err != nil {
 		return 0, fmt.Errorf("makeRequest: %v\n", err)
 	}
-	//req, err := http.NewRequest("GET", EMPLOYEES_URL, nil)
-	//if err != nil {
-	//	return 0, fmt.Errorf("http.NewRequest: %v", err)
-	//}
-	//client := &http.Client{}
-	//resp, err := client.Do(req)
-	//if err != nil {
-	//	return 0, fmt.Errorf("Do: %v", err)
-	//}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("StatusCode: %v", resp.StatusCode)
@@ -377,9 +379,9 @@ func getLastId() (int, error) {
 	return id, nil
 }
 
-func TestHandleTechInfo(t *testing.T) {
+func TestRouterTechInfo(t *testing.T) {
 	assert := assert.New(t)
-    req := &Request{Method: "GET", URL: SERVER_URL + TECH_INFO}
+	req := &Request{Method: "GET", URL: SERVER_URL + TECH_INFO}
 	resp, err := makeRequest(req)
 	if err != nil {
 		t.Logf("makeRequest: %v\n", err)

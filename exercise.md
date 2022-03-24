@@ -121,6 +121,13 @@ https://medium.com/@nitronick600/extending-gorilla-mux-tutorial-pt-1-90d0ef3affe
 }
 ```
 
+## Задание 3.
+
+Написать API сервис, возвращающий данные обо всех сотрудниках за счёт 
+конкурентного вызова employees_get_all_part1() и employees_get_all_part2().
+
+
+
 Вспомогательная литература:
 
 * Building RESTful Web services with Go.pdf

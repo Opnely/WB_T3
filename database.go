@@ -1,47 +1,57 @@
 // Интерфейс для манипулирования базой данных postgreSQL.
-// Соединение осуществляется с помощью pgxpool.
+// Соединение осуществляется с помощью database/sql и lib/pq.
 
 package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/lib/pq"
 )
 
 const (
-	DB_URL = "postgres://postgresadmin:admin123@localhost:5432/postgresdb"
+	DB_URL = "postgres://postgresadmin:admin123@localhost:5432/postgresdb" +
+		"?sslmode=disable"
+	NO_RESULTS = "50003" // pq.Error.Code
 )
 
-// Интерфейс базы данных
-type Database interface {
-	Add(Data, context.Context) error
+// Интерфейс базы данных сотрудников
+type Postgresdb interface {
+	FireEmployee(int, context.Context) error
 	Close()
-	GetAll(context.Context) (Rows, error)
+	GetAllEmployees(context.Context) (Rows, error)
+	GetAllEmployeeNames(context.Context) (Rows, error)
+	GetAllEmployeeNonNames(context.Context) (Rows, error)
 	GetHighestId(context.Context) (int, error)
-	GetId(int, context.Context) (Rows, error)
-	Remove(int, context.Context) error
-	Update(Data, context.Context) error
+	GetEmployee(int, context.Context) (Rows, error)
+	HireEmployee(Data, context.Context) error
+	UpdateEmployee(Data, context.Context) error
 }
 
 // Структура с методами для манипулирования информацией в базе данных.
 type PostgreSQL struct {
-	Conn *pgxpool.Pool // установленное соединение с базой данных
+	Conn *sql.DB // установленное соединение с базой данных
 }
 
 // Добавить запись d в таблицу employees.employees базы данных.
-func (p *PostgreSQL) Add(d Data, ctx context.Context) error {
-	rows, err := p.Conn.Query(ctx,
+func (p *PostgreSQL) HireEmployee(d Data, ctx context.Context) error {
+	res, err := p.Conn.ExecContext(ctx,
 		"SELECT employees.employee_add($1, $2, $3, $4, $5, $6);", d.FirstName,
 		d.LastName, d.MidName, d.PhoneNum, d.Position, d.DoneJobs)
 	if err != nil {
-		return fmt.Errorf("Query: %v\n", err)
+		return fmt.Errorf("ExecContext: %v\n", err)
 	}
-	defer rows.Close()
-	rows.Next() // прочитать ошибку, если есть
-	return rows.Err()
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("RowsAffected: %v\n", err)
+	}
+	if rows != 1 {
+		return fmt.Errorf("ожидалось изменение одной строки, получилось: %d",
+			rows)
+	}
+	return nil
 }
 
 // Закрыть соединение с базой данных.
@@ -49,77 +59,147 @@ func (p *PostgreSQL) Close() {
 	p.Conn.Close()
 }
 
-// Запросить все поля таблицы employees.emoloyess базы данных.
-// Вернуть поля в интерфейсе Rows и ошибку.
-func (p *PostgreSQL) GetAll(ctx context.Context) (Rows, error) {
-	//rows, err := p.Conn.Query(ctx, "SELECT employees.get_all();")
-	rows, err := p.Conn.Query(ctx, "SELECT * FROM employees.employees;")
-	if err != nil {
-		return nil, fmt.Errorf("Query: %v\n", err)
-	}
-	return NewRows(rows), nil
-}
-
-// Запросить все поля таблицы employees.emoloyess базы данных.
-// Вернуть поле в интерфейсе Rows и ошибку.
-func (p *PostgreSQL) GetId(id int, ctx context.Context) (Rows, error) {
-	//rows, err := p.Conn.Query(ctx, "SELECT employees.employee_get($1);", id)
-	rows, err := p.Conn.Query(ctx,
-		"SELECT * FROM employees.employees WHERE id = $1;", id)
-	if err != nil {
-		return nil, fmt.Errorf("Query: %v\n", err)
-	}
-	return NewRows(rows), nil
-}
-
 // Удалить запись id таблицы employees.employees базы данных.
-func (p *PostgreSQL) Remove(id int, ctx context.Context) error {
-	rs, err := p.Conn.Query(ctx, "SELECT employees.employee_remove($1);", id)
+func (p *PostgreSQL) FireEmployee(id int, ctx context.Context) error {
+	res, err := p.Conn.ExecContext(ctx,
+		"SELECT employees.employee_remove($1);", id)
 	if err != nil {
-		return fmt.Errorf("Query: %v\n", err)
+		return fmt.Errorf("ExecContext: %v\n", err)
 	}
-	defer rs.Close()
-	rs.Next() // прочитать ошибку, если есть
-	return rs.Err()
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("RowsAffected: %v\n", err)
+	}
+	if rows != 1 {
+		return fmt.Errorf("ожидалось изменение одной строки, получилось: %d",
+			rows)
+	}
+	return nil
+}
+
+// Запросить все поля таблицы employees.employees базы данных.
+// Вернуть поля в интерфейсе Rows и ошибку.
+func (p *PostgreSQL) GetAllEmployees(ctx context.Context) (Rows, error) {
+	rows, err := p.Conn.QueryContext(ctx,
+		"SELECT * FROM employees.get_all();")
+	if err != nil {
+		err, ok := err.(*pq.Error)
+		if !ok { // невозможная ошибка
+			return nil, fmt.Errorf("assertion failed QueryContext: %v\n", err)
+		}
+		if err.Code == NO_RESULTS {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("QueryContext: %v\n", err)
+	}
+	return NewRows(rows), nil
+}
+
+// Запросить поля name, last_name и id таблицы employees.employees бд.
+// Вернуть поля в интерфейсе Rows и ошибку.
+func (p *PostgreSQL) GetAllEmployeeNames(ctx context.Context) (Rows, error) {
+	rows, err := p.Conn.QueryContext(ctx,
+		"SELECT * FROM employees.employees_get_all_part1();")
+	if err != nil {
+		err, ok := err.(*pq.Error)
+		if !ok { // невозможная ошибка
+			return nil, fmt.Errorf("assertion failed QueryContext: %v\n", err)
+		}
+		if err.Code == NO_RESULTS {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("QueryContext: %v\n", err)
+	}
+	return NewRows(rows), nil
+}
+
+// Запросить все поля, кроме name и last_name таблицы employees.employees бд.
+// Вернуть поля в интерфейсе Rows и ошибку.
+func (p *PostgreSQL) GetAllEmployeeNonNames(ctx context.Context) (Rows, error) {
+	rows, err := p.Conn.QueryContext(ctx,
+		"SELECT * FROM employees.employees_get_all_part2();")
+	if err != nil {
+		err, ok := err.(*pq.Error)
+		if !ok { // невозможная ошибка
+			return nil, fmt.Errorf("assertion failed QueryContext: %v\n", err)
+		}
+		if err.Code == NO_RESULTS {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("QueryContext: %v\n", err)
+	}
+	return NewRows(rows), nil
+}
+
+// Запросить соответствующие id поля таблицы employees.emoloyess базы данных.
+// Если данных не обнаружено, функция возвращает (nil, nil).
+// Вернуть поле в интерфейсе Rows и ошибку.
+func (p *PostgreSQL) GetEmployee(id int, ctx context.Context) (Rows, error) {
+	rows, err := p.Conn.QueryContext(ctx,
+		"SELECT * FROM employees.employee_get($1);", id)
+	if err != nil {
+		err, ok := err.(*pq.Error)
+		if !ok { // невозможная ошибка
+			return nil, fmt.Errorf("assertion failed QueryContext: %v\n", err)
+		}
+		if err.Code == NO_RESULTS {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("QueryContext: %v\n", err)
+	}
+	return NewRows(rows), nil
 }
 
 // Обновить запись d таблицы employees.employees базы данных.
-func (p *PostgreSQL) Update(d Data, ctx context.Context) error {
-	rows, err := p.Conn.Query(ctx,
+func (p *PostgreSQL) UpdateEmployee(d Data, ctx context.Context) error {
+	res, err := p.Conn.ExecContext(ctx,
 		"SELECT employees.employee_upd($1, $2, $3, $4, $5, $6, $7);", d.Id,
 		d.FirstName, d.LastName, d.MidName, d.PhoneNum, d.Position, d.DoneJobs)
 	if err != nil {
-		return fmt.Errorf("Query: %v\n", err)
+		return fmt.Errorf("ExecContext: %v\n", err)
 	}
-	defer rows.Close()
-	rows.Next() // прочитать ошибку, если есть
-	return rows.Err()
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("RowsAffected: %v\n", err)
+	}
+	if rows != 1 {
+		return fmt.Errorf("ожидалось изменение одной строки, получилось: %d",
+			rows)
+	}
+	return nil
 }
 
 // Вернуть самый высокий id таблицы employees.employees базы данных.
 // Вернуть id и ошибку.
 func (p *PostgreSQL) GetHighestId(ctx context.Context) (int, error) {
-	rows, err := p.Conn.Query(ctx,
+	rows, err := p.Conn.QueryContext(ctx,
 		"SELECT id FROM employees.employees ORDER BY id DESC LIMIT 1;")
 	if err != nil {
-		return 0, fmt.Errorf("Query: %v\n", err)
+		err, ok := err.(*pq.Error)
+		if !ok { // невозможная ошибка
+			return 0, fmt.Errorf("assertion failed QueryContext: %v\n", err)
+		}
+		if err.Code == NO_RESULTS {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("QueryContext: %v\n", err)
 	}
 	defer rows.Close()
 
-	var id int32
+	var id int
 	rows.Next()
 	rows.Scan(&id)
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
-	return int(id), nil
+	return id, nil
 }
 
-// Создать новую переменную интерфейса Database.
-func NewDatabase() (Database, error) {
-	cn, err := pgxpool.Connect(context.Background(), DB_URL)
+// Создать новую переменную интерфейса Postgresdb.
+func NewPostgresdb() (Postgresdb, error) {
+	cn, err := sql.Open("postgres", DB_URL)
 	if err != nil {
-		return nil, fmt.Errorf("Connect: %v", err)
+		return nil, fmt.Errorf("sql.Open: %v", err)
 	}
 	return &PostgreSQL{Conn: cn}, nil
 }
@@ -131,11 +211,10 @@ type Rows interface {
 	Err() error
 	Next() bool
 	Scan(...interface{}) error
-	Values() ([]interface{}, error)
 }
 
 type pgRows struct {
-	Rows pgx.Rows
+	Rows *sql.Rows
 }
 
 func (r *pgRows) Close() {
@@ -154,10 +233,6 @@ func (r *pgRows) Scan(dest ...interface{}) error {
 	return r.Rows.Scan(dest...)
 }
 
-func (r *pgRows) Values() ([]interface{}, error) {
-	return r.Rows.Values()
-}
-
-func NewRows(rows pgx.Rows) Rows {
+func NewRows(rows *sql.Rows) Rows {
 	return &pgRows{Rows: rows}
 }
