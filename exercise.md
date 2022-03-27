@@ -110,6 +110,7 @@ Ex: SELECT employees.employee_get(1);
 https://medium.com/@nitronick600/extending-gorilla-mux-tutorial-pt-1-90d0ef3affec
 
 
+
 ## Задание 2.
 
 Добавить технический метод GET /tech/info, который вернет JSON с информацией о приложении:
@@ -120,6 +121,7 @@ https://medium.com/@nitronick600/extending-gorilla-mux-tutorial-pt-1-90d0ef3affe
 	"version": "1.0.0"
 }
 ```
+
 
 ## Задание 3.
 
@@ -133,3 +135,66 @@ https://medium.com/@nitronick600/extending-gorilla-mux-tutorial-pt-1-90d0ef3affe
 * Building RESTful Web services with Go.pdf
 * The_Ultimate_Guide_To_Building_Database-Driven_Apps_with_Go.pdf
 * Clean_Code.pdf
+
+
+
+## Задание 4.
+Цель - научиться обрабатывать коды ошибок при запросах БД. В зависимости от типа ошибки возвращать соответствующий статус код.
+Процедура test.get_db_error(_id integer), где
+Id = 1 вернет пользовательскую ошибку
+Id = 2 вернет ошибку бд,
+Любой другой id вернет bool (то есть отработает успешно, без ошибок)_
+Ошибка с кодом больше 50 000 (либо уровень ошибки 50) – пользовательская, иначе – внутренняя, в бд в зависимости от уровня ошибки необходимо отдавать сервисом 400 или 500 код. 
+При пользовательской ошибке необходимо в ответ также отдавать текст ошибки из БД, при внутренней ошибке нужно модифицировать текст ответа от базы и отдавать общий текст - "хранилище временно не доступно", при этом писать в лог полную ошибку из базы # Конфиг. GitLab CI.
+
+Цель: Научиться конфигурировать сервис. 
+
+
+
+## Задание 5.
+
+Сконфигурировать сервис следующим образом:
+
+Для хранения настроек приложения мы используем формат [TOML](https://en.wikipedia.org/wiki/TOML).
+Для чтения данных из toml-файлов используем библиотеку "github.com/BurntSushi/toml" для конфига библиотека.
+
+Пример данных, подходящих для хранения в config.toml:
+
+* название приложения
+* версия приложения
+* название хранимых процедур
+* claim для авторизации
+* и т.п.
+
+Пример данных, подходящих для хранения в секретах:
+
+* клиент авторизации и его секрет
+* имя пользователя и пароль БД
+* и другие чувствительные данные
+Задание 3.
+Изучить переменные окружения и основные инструменты для работы с ними в Go. 
+Переписать программу таким образом, чтобы секретные данные, такие как User и Password считывались из переменных окружения.
+Вспомогательная литература:
+
+https://gobyexample.com/environment-variables# Сбор метрик приложения
+
+
+
+## Задание 6.
+
+Цель: научиться работать с метриками приложения 
+
+
+Ознакомиться со статьями  
+https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels  
+https://medium.com/southbridge/prometheus-monitoring-ba8fbda6e83   ([original](https://kjanshair.github.io/2018/02/20/prometheus-monitoring/) )
+[recommended blog](https://blog.pvincent.io/2017/12/prometheus-blog-series-part-1-metrics-and-labels/)
+[example](https://dev.to/metonymicsmokey/custom-prometheus-metrics-with-go-520n)
+[metric types](https://chronosphere.io/learn/an-introduction-to-the-four-primary-types-of-prometheus-metrics/)
+
+
+Затем добавить в сервис отдельный роут /metrics (без префиксов /api/v1 или /tech) в котором будут отражены:
+
+* метрики на успешные (200+) и неуспешные запросы (400+ и 500+)
+* метрики на время выполнения запроса и время ответа от бд
+* метрики на используемую память и количество потраченного процессорного времени

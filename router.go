@@ -26,13 +26,11 @@ const (
 	NO_CONTENT_ERROR = "Записей не найдено"
 	UNKNOWN_ERROR    = "Неизвестный статус ошибки"
 
-	ADDRESS    = "localhost"
-	API_PATH   = "/api/v1/employees"
-	PORT       = ":33890"
-	TYPE_JSON  = "application/json"
-	SERVER_URL = "http://" + ADDRESS + PORT
+	API_EMPL_PATH   = "/api/v1/employees"
+	API_ERR_PATH   = "/api/v1/error"
+	API_INFO_PATH = "/tech/info"
 
-	INFO = `{"name": "employees", "version":"1.4.0"}`
+	TYPE_JSON  = "application/json"
 )
 
 // Структура сервер
@@ -44,12 +42,13 @@ type Router struct {
 
 // Установить функции для обработки запросов.
 func (r *Router) MakeRoutes() {
-	r.R.HandleFunc(API_PATH, r.HireEmployee).Methods("POST")
-	r.R.HandleFunc(API_PATH, accept(r.GetAllEmployees)).Methods("GET")
-	r.R.HandleFunc(API_PATH+"/{id}", r.GetEmployee).Methods("GET")
-	r.R.HandleFunc(API_PATH+"/{id}", r.FireEmployee).Methods("DELETE")
-	r.R.HandleFunc(API_PATH, r.UpdateEmployee).Methods("PUT")
-	r.R.HandleFunc("/tech/info", r.GetTechInfo).Methods("GET")
+	r.R.HandleFunc(API_ERR_PATH+"/{id}", r.GetErr).Methods("GET")
+	r.R.HandleFunc(API_EMPL_PATH+"/{id}", r.FireEmployee).Methods("DELETE")
+	r.R.HandleFunc(API_EMPL_PATH, accept(r.GetAllEmployees)).Methods("GET")
+	r.R.HandleFunc(API_EMPL_PATH+"/{id}", r.GetEmployee).Methods("GET")
+	r.R.HandleFunc(API_EMPL_PATH, r.HireEmployee).Methods("POST")
+	r.R.HandleFunc(API_EMPL_PATH, r.UpdateEmployee).Methods("PUT")
+	r.R.HandleFunc(API_INFO_PATH, r.GetTechInfo).Methods("GET")
 }
 
 // Запустить сервер
@@ -64,7 +63,7 @@ func (r *Router) Start() {
 			log.Fatal(err)
 		}
 	}()
-	log.Printf("Запуск сервера на %s%s\n", ADDRESS, PORT)
+    log.Printf("Запуск сервера на %s:%s\n", cfg.Prog.Addr, cfg.Prog.Port)
 	log.Fatal(r.Srv.ListenAndServe())
 }
 
@@ -91,7 +90,8 @@ func (r *Router) FireEmployee(w http.ResponseWriter, req *http.Request) {
 	}
 	// 2. Сделать запрос
 	if err := r.M.FireEmployee(id, req.Context()); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+        writeDbErr(w, err)
+		//writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 }
@@ -119,11 +119,12 @@ func (r *Router) GetAllEmployees(w http.ResponseWriter, req *http.Request) {
 	// 1. Сделать запрос.
 	data, err := r.M.GetAllEmployees(req.Context())
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+        writeDbErr(w, err)
+		//writeErr(w, http.StatusInternalServerError, err.Error())
 		return
-	} else if data == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
+	//} else if data == nil {
+	//	w.WriteHeader(http.StatusNoContent)
+	//	return
 	}
 	// 2. Перекодировать запрос в формат, соответствующий header Accept.
 	var buf bytes.Buffer // конвертированные данные
@@ -152,6 +153,31 @@ func (r *Router) GetAllEmployees(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// Используется только для тестов.
+// Вернуть пользовательскую ошибку на id = 1.
+// Вернуть ошибку базы данных на id = 2.
+// Иначе, вернуть nil.
+func (r *Router) GetErr(w http.ResponseWriter, req *http.Request) {
+	// 1. Проверить переданные данные
+	vars := mux.Vars(req)
+	idstr, ok := vars["id"]
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "отсутствует параметр id")
+		return
+	}
+	id, err := strconv.Atoi(idstr)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "плохой параметр id")
+		return
+	}
+	// 2. Сделать запрос
+    err = r.M.GetErr(id)
+    if err != nil {
+        writeDbErr(w, err)
+        return
+    }
+}
+
 // Запросить данные из модели с переданным аргументом id.
 // Логировать ошибку записи ответа.
 // В случае успеха вернуть данные в формате JSON.
@@ -171,11 +197,12 @@ func (r *Router) GetEmployee(w http.ResponseWriter, req *http.Request) {
 	// 2. Сделать запрос
 	data, err := r.M.GetEmployee(id, req.Context())
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+        writeDbErr(w, err)
+		//writeErr(w, http.StatusInternalServerError, err.Error())
 		return
-	} else if data == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
+    //} else if data == nil {
+    //	w.WriteHeader(http.StatusNoContent)
+    //	return
 	}
 	// 3. Перекодировать запрос в JSON и вернуть клиенту
 	datajson, err := json.Marshal(data)
@@ -192,7 +219,7 @@ func (r *Router) GetEmployee(w http.ResponseWriter, req *http.Request) {
 
 // Вернуть данные о программе.
 func (r *Router) GetTechInfo(w http.ResponseWriter, req *http.Request) {
-	_, err := w.Write([]byte(INFO))
+	_, err := w.Write([]byte(cfg.Prog.Info))
 	if err != nil {
 		log.Printf("Write: %v\n", err)
 		return
@@ -219,7 +246,7 @@ func (r *Router) HireEmployee(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := r.M.HireEmployee(buf.String(), req.Context()); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+        writeDbErr(w, err)
 		return
 	}
 	// 3. Вернуть код 201
@@ -246,7 +273,7 @@ func (r *Router) UpdateEmployee(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := r.M.UpdateEmployee(buf.String(), req.Context()); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+        writeDbErr(w, err)
 		return
 	}
 }
@@ -260,7 +287,7 @@ func NewRouter() (*Router, error) {
 	}
 	r.M = m
 	r.R = mux.NewRouter()
-	r.Srv.Addr = ADDRESS + PORT
+    r.Srv.Addr = cfg.Prog.Addr + ":" + cfg.Prog.Port
 	r.Srv.Handler = r.R
 
 	return &r, nil
@@ -278,6 +305,15 @@ type ResponseError struct {
 	Status int    `json:"status"`
 	Detail string `json:"detail"`
 	Title  string `json:"title"`
+}
+
+// Вызвать writeErr с аргументами зависящими от типа ошибки базы данных.
+func writeDbErr(w http.ResponseWriter, err error) {
+    if err == dbNA {
+        writeErr(w, http.StatusInternalServerError, dbNA.Error())
+    } else {
+        writeErr(w, http.StatusBadRequest, err.Error())
+    }
 }
 
 // Записать ошибку в формате RFC 7807 в w.

@@ -5,22 +5,78 @@ package main
 import (
 	"context"
 	"encoding/json"
+    "errors"
 	"fmt"
 	"log"
+    "os"
 	"sync"
+
+    "github.com/BurntSushi/toml"
 )
 
 const (
+    CONFIG_FNAME = "config.toml"
+    INFO_FMT = `{"name": %q, "version": %q}`
 	MIN_ENTRIES = 64 // начальный размер среза для считывания записей из бд
 )
+
+var (
+    dbNA = errors.New("Хранилище временно недоступно") // все ошибки сервера
+    cfg Config // заполняется функцией init()
+)
+
+// Структура с переменными конфигурации. Заполняется из файла CONFIG_FNAME
+type Config struct {
+    Pgdb PgdbConfig `toml:"postgresdb"`
+    Prog ProgConfig `toml:"program"`
+}
+
+type PgdbConfig struct {
+    Addr string `toml:"address"`
+    Name string `toml:"name"`
+    Port string `toml:"port"`
+}
+
+type ProgConfig struct {
+    Addr string `toml:"address"`
+    EmplUrl string
+    ErrUrl string
+    Info string // информация по запросу /tech/info
+    Name string `toml:"name"`
+    Port string `toml:"port"`
+    ServerUrl string
+    Version string `toml:"version"`
+}
+
+func init() {
+    // 1. Загрузить конфигурацию из файла config.toml
+    fp, err := os.Open(CONFIG_FNAME)
+    if err != nil {
+        log.Fatalf("os.Open(%s): %v\n", CONFIG_FNAME, err)
+    }
+    defer fp.Close()
+
+    decoder := toml.NewDecoder(fp)
+    _, err = decoder.Decode(&cfg)
+    if err != nil {
+        log.Fatalf("Decode dbConfig: %v\n", err)
+    }
+    // 2. Заполнить остальные поля переменной с конфигурацией
+    cfg.Prog.Info = fmt.Sprintf(INFO_FMT, cfg.Prog.Name, cfg.Prog.Version)
+    cfg.Prog.ServerUrl = "http://" + cfg.Prog.Addr + ":" + cfg.Prog.Port
+    cfg.Prog.EmplUrl = cfg.Prog.ServerUrl + API_EMPL_PATH
+    cfg.Prog.ErrUrl = cfg.Prog.ServerUrl + API_ERR_PATH
+    fmt.Printf("Config: %v\n", cfg)
+}
+
 
 // Поля одной записи таблицы базы данных
 type Data struct {
 	Id        int    `json:"id"`
-	DoneJobs  int    `json:"good_job_count"`
+	DoneJobs  int    `json:"goodJobCount"`
 	FirstName string `json:"name"`
 	MidName   string `json:"patronynic"`
-	LastName  string `json:"last_name"`
+	LastName  string `json:"lastName"`
 	PhoneNum  string `json:"phone"`
 	Position  string `json:"position"`
 }
@@ -33,6 +89,7 @@ type Model interface {
 	GetAllEmployees(context.Context) ([]Data, error)
 	GetAllEmployeesConcur(context.Context) ([]Data, error)
 	GetEmployee(int, context.Context) (*Data, error)
+    GetErr(int) error
 	HireEmployee(string, context.Context) error
 	UpdateEmployee(string, context.Context) error
 }
@@ -41,19 +98,15 @@ type Service struct {
 	Pgdb Postgresdb // интерфейс для работы с базой данных postgresdb
 }
 
-// Добавить перекодированную в Data строку JSON в базу данных.
-func (s *Service) HireEmployee(req string, ctx context.Context) error {
-	var d Data
-	if err := json.Unmarshal([]byte(req), &d); err != nil {
-		return err
-	}
-	return s.Pgdb.HireEmployee(d, ctx)
-}
-
 // Закрыть соединение с базой данных
 func (s *Service) Close() {
 	log.Println("Закрытие соединения с базой данных")
 	s.Pgdb.Close()
+}
+
+// Удалить запись id из базы данных.
+func (s *Service) FireEmployee(id int, ctx context.Context) error {
+	return s.Pgdb.FireEmployee(id, ctx)
 }
 
 // Вернуть адрес структуры Data с данными по id из базы данных.
@@ -63,9 +116,6 @@ func (s *Service) GetEmployee(id int, ctx context.Context) (*Data, error) {
 	rows, err := s.Pgdb.GetEmployee(id, ctx)
 	if err != nil {
 		return nil, err
-	}
-	if rows == nil { // данных не найдено
-		return nil, nil
 	}
 	var d Data
 	for rows.Next() {
@@ -86,9 +136,7 @@ func (s *Service) GetAllEmployees(ctx context.Context) ([]Data, error) {
 	rows, err := s.Pgdb.GetAllEmployees(ctx)
 	if err != nil {
 		return nil, err
-	} else if rows == nil { // данных не найдено
-		return nil, nil
-	}
+	} 
 	slice := make([]Data, 0, MIN_ENTRIES)
 	for rows.Next() {
 		var d Data
@@ -164,9 +212,21 @@ func (s *Service) GetAllEmployeesConcur(ctx context.Context) ([]Data, error) {
 	return slice, nil
 }
 
-// Удалить запись id из базы данных.
-func (s *Service) FireEmployee(id int, ctx context.Context) error {
-	return s.Pgdb.FireEmployee(id, ctx)
+// Используется только для тестов.
+// Вернуть пользовательскую ошибку на id = 1.
+// Вернуть ошибку базы данных на id = 2.
+// Иначе, вернуть nil.
+func (s *Service) GetErr(id int) error {
+    return s.Pgdb.GetErr(id)
+}
+
+// Добавить перекодированную в Data строку JSON в базу данных.
+func (s *Service) HireEmployee(req string, ctx context.Context) error {
+	var d Data
+	if err := json.Unmarshal([]byte(req), &d); err != nil {
+		return err
+	}
+	return s.Pgdb.HireEmployee(d, ctx)
 }
 
 // Изменить строку JSON в базе данных. Перекодировать строку в Data.

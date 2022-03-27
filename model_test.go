@@ -22,15 +22,6 @@ type MockPgdb struct {
 	Rows []string // содержимое таблиц базы данных
 }
 
-// Добавить строку в базу данных. Функция не взаимодействует в m.Rows.
-func (m *MockPgdb) HireEmployee(d Data, _ context.Context) error {
-	if d.FirstName == "" {
-		return fmt.Errorf("пустое имя")
-	} else if d.FirstName == "John" {
-		return fmt.Errorf("запись существует")
-	}
-	return nil
-}
 
 func (m *MockPgdb) Close() {
 }
@@ -42,7 +33,7 @@ func (m *MockPgdb) GetEmployee(id int, _ context.Context) (Rows, error) {
 	} else if id == 1 {
 		return NewMockRows([]string{m.Rows[0]}), nil
 	} else if id == 9999 {
-		return nil, nil // id не существует
+		return nil, fmt.Errorf("id не найден")
 	}
 	return NewMockRows(nil), nil
 }
@@ -60,8 +51,8 @@ func (m *MockPgdb) GetAllEmployeeNonNames(_ context.Context) (Rows, error) {
 	return NewMockRows(m.Rows), nil
 }
 
-func (m *MockPgdb) GetHighestId(_ context.Context) (int, error) {
-	return 0, nil
+func (m *MockPgdb) GetErr(id int) error {
+    return nil
 }
 
 // Удалить строку из базы данных. Функция не взаимодействует в m.Rows.
@@ -70,6 +61,20 @@ func (m *MockPgdb) FireEmployee(id int, _ context.Context) error {
 		return fmt.Errorf("id < 1")
 	} else if id == 1 {
 		return fmt.Errorf("id не существует")
+	}
+	return nil
+}
+
+func (m *MockPgdb) GetHighestId(_ context.Context) (int, error) {
+	return 0, nil
+}
+
+// Добавить строку в базу данных. Функция не взаимодействует в m.Rows.
+func (m *MockPgdb) HireEmployee(d Data, _ context.Context) error {
+	if d.FirstName == "" {
+		return fmt.Errorf("пустое имя")
+	} else if d.FirstName == "John" {
+		return fmt.Errorf("запись существует")
 	}
 	return nil
 }
@@ -160,16 +165,14 @@ func TestModelGetAllEmployees(t *testing.T) {
 }
 
 // Тесты получения записи по id.
-// Параметр out = false, если результат функции GetEmployee = nil.
-// Параметр err = true, если функция GetEmployee возвращает ошибку.
 func TestModelGetEmployee(t *testing.T) {
 	var tests = []struct {
 		id       int
-		out, err bool
+		err bool
 	}{
-		{0, false, true},     // неверный id
-		{9999, false, false}, // записи не существует
-		{1, true, false},     // успех
+		{0, true},     // неверный id
+		{9999, true}, // записи не существует
+		{1, false},     // успех
 	}
 	assert := assert.New(t)
 	service, _ := NewModel()
@@ -179,10 +182,7 @@ func TestModelGetEmployee(t *testing.T) {
 		if err != nil {
 			assert.Equal(test.err, true, "Тест %d: %v\n", i, err)
 			continue
-		} else if d == nil {
-			assert.Equal(test.out, false, "Тест %d\n", i)
-			continue
-		}
+		} 
 		assert.Equal(test.id, d.Id, "Тест %d\n", i)
 	}
 }

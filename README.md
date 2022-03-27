@@ -3,4 +3,4 @@ Datbase -> Model <- Router <- Client
 
 
 # Тесты
-go test -v *.go
+PGDB_USER=postgresadmin PGDB_PWD=admin123 go test -v *.go
