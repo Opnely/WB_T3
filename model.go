@@ -5,70 +5,76 @@ package main
 import (
 	"context"
 	"encoding/json"
-    "errors"
+	"errors"
 	"fmt"
 	"log"
-    "os"
+	"os"
 	"sync"
 
-    "github.com/BurntSushi/toml"
+	"github.com/BurntSushi/toml"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const (
-    CONFIG_FNAME = "config.toml"
-    INFO_FMT = `{"name": %q, "version": %q}`
-	MIN_ENTRIES = 64 // начальный размер среза для считывания записей из бд
+	CONFIG_FNAME = "config.toml"
+	INFO_FMT     = `{"name": %q, "version": %q}`
+	MIN_ENTRIES  = 64 // начальный размер среза для считывания записей из бд
 )
 
 var (
-    dbNA = errors.New("Хранилище временно недоступно") // все ошибки сервера
-    cfg Config // заполняется функцией init()
+	dbNA = errors.New("Хранилище временно недоступно") // все ошибки сервера
+	cfg  Config                                        // заполняется функцией init()
 )
 
 // Структура с переменными конфигурации. Заполняется из файла CONFIG_FNAME
 type Config struct {
-    Pgdb PgdbConfig `toml:"postgresdb"`
-    Prog ProgConfig `toml:"program"`
+	Pgdb PgdbConfig `toml:"postgresdb"`
+	Prog ProgConfig `toml:"program"`
 }
 
 type PgdbConfig struct {
-    Addr string `toml:"address"`
-    Name string `toml:"name"`
-    Port string `toml:"port"`
+	Addr string `toml:"address"`
+	Name string `toml:"name"`
+	Port string `toml:"port"`
 }
 
 type ProgConfig struct {
-    Addr string `toml:"address"`
-    EmplUrl string
-    ErrUrl string
-    Info string // информация по запросу /tech/info
-    Name string `toml:"name"`
-    Port string `toml:"port"`
-    ServerUrl string
-    Version string `toml:"version"`
+	Addr      string `toml:"address"`
+	EmplUrl   string
+	ErrUrl    string
+	Info      string // информация по запросу /tech/info
+	Name      string `toml:"name"`
+	Port      string `toml:"port"`
+	ServerUrl string
+	Version   string `toml:"version"`
 }
 
 func init() {
-    // 1. Загрузить конфигурацию из файла config.toml
-    fp, err := os.Open(CONFIG_FNAME)
-    if err != nil {
-        log.Fatalf("os.Open(%s): %v\n", CONFIG_FNAME, err)
-    }
-    defer fp.Close()
+	// 1. Загрузить конфигурацию из файла config.toml
+	fp, err := os.Open(CONFIG_FNAME)
+	if err != nil {
+		log.Fatalf("os.Open(%s): %v\n", CONFIG_FNAME, err)
+	}
+	defer fp.Close()
 
-    decoder := toml.NewDecoder(fp)
-    _, err = decoder.Decode(&cfg)
-    if err != nil {
-        log.Fatalf("Decode dbConfig: %v\n", err)
-    }
-    // 2. Заполнить остальные поля переменной с конфигурацией
-    cfg.Prog.Info = fmt.Sprintf(INFO_FMT, cfg.Prog.Name, cfg.Prog.Version)
-    cfg.Prog.ServerUrl = "http://" + cfg.Prog.Addr + ":" + cfg.Prog.Port
-    cfg.Prog.EmplUrl = cfg.Prog.ServerUrl + API_EMPL_PATH
-    cfg.Prog.ErrUrl = cfg.Prog.ServerUrl + API_ERR_PATH
-    fmt.Printf("Config: %v\n", cfg)
+	decoder := toml.NewDecoder(fp)
+	_, err = decoder.Decode(&cfg)
+	if err != nil {
+		log.Fatalf("Decode dbConfig: %v\n", err)
+	}
+	// 2. Заполнить остальные поля переменной с конфигурацией
+	cfg.Prog.Info = fmt.Sprintf(INFO_FMT, cfg.Prog.Name, cfg.Prog.Version)
+	cfg.Prog.ServerUrl = "http://" + cfg.Prog.Addr + ":" + cfg.Prog.Port
+	cfg.Prog.EmplUrl = cfg.Prog.ServerUrl + API_EMPL_PATH
+	cfg.Prog.ErrUrl = cfg.Prog.ServerUrl + API_ERR_PATH
+	fmt.Printf("Config: %v\n", cfg)
 }
 
+var pgdbDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+	Name: "postgresdb_response_time_seconds",
+	Help: "Продолжительность запросов базы данных postgresdb.",
+})
 
 // Поля одной записи таблицы базы данных
 type Data struct {
@@ -89,7 +95,7 @@ type Model interface {
 	GetAllEmployees(context.Context) ([]Data, error)
 	GetAllEmployeesConcur(context.Context) ([]Data, error)
 	GetEmployee(int, context.Context) (*Data, error)
-    GetErr(int) error
+	GetErr(int) error
 	HireEmployee(string, context.Context) error
 	UpdateEmployee(string, context.Context) error
 }
@@ -106,6 +112,8 @@ func (s *Service) Close() {
 
 // Удалить запись id из базы данных.
 func (s *Service) FireEmployee(id int, ctx context.Context) error {
+	timer := prometheus.NewTimer(pgdbDuration)
+	defer timer.ObserveDuration()
 	return s.Pgdb.FireEmployee(id, ctx)
 }
 
@@ -113,7 +121,9 @@ func (s *Service) FireEmployee(id int, ctx context.Context) error {
 // Если функция возвращает (nil, nil), запрос выполнен успешно, но данных не
 // найдено.
 func (s *Service) GetEmployee(id int, ctx context.Context) (*Data, error) {
+	timer := prometheus.NewTimer(pgdbDuration)
 	rows, err := s.Pgdb.GetEmployee(id, ctx)
+	timer.ObserveDuration()
 	if err != nil {
 		return nil, err
 	}
@@ -133,10 +143,12 @@ func (s *Service) GetEmployee(id int, ctx context.Context) (*Data, error) {
 
 // Вернуть срез структур Data со всеми данными из базы данных.
 func (s *Service) GetAllEmployees(ctx context.Context) ([]Data, error) {
+	timer := prometheus.NewTimer(pgdbDuration)
 	rows, err := s.Pgdb.GetAllEmployees(ctx)
+	timer.ObserveDuration()
 	if err != nil {
 		return nil, err
-	} 
+	}
 	slice := make([]Data, 0, MIN_ENTRIES)
 	for rows.Next() {
 		var d Data
@@ -162,11 +174,11 @@ func (s *Service) GetAllEmployeesConcur(ctx context.Context) ([]Data, error) {
 	go func() {
 		defer wg.Done()
 		var rows Rows
+		timer := prometheus.NewTimer(pgdbDuration)
 		rows, goerr = s.Pgdb.GetAllEmployeeNames(ctx)
+		timer.ObserveDuration()
 		if goerr != nil {
 			return
-		} else if rows == nil { // данных не найдено
-			return // вне горутины ожидается такая же ошибка
 		}
 		for rows.Next() {
 			var id int
@@ -179,11 +191,11 @@ func (s *Service) GetAllEmployeesConcur(ctx context.Context) ([]Data, error) {
 		}
 	}()
 	// 2. Считать данные в срез структур Data
+	timer := prometheus.NewTimer(pgdbDuration)
 	rows, err := s.Pgdb.GetAllEmployeeNonNames(ctx)
+	timer.ObserveDuration()
 	if err != nil {
 		return nil, err
-	} else if rows == nil { // данных не найдено
-		return nil, nil
 	}
 	slice := make([]Data, 0, MIN_ENTRIES)
 	for rows.Next() {
@@ -217,7 +229,7 @@ func (s *Service) GetAllEmployeesConcur(ctx context.Context) ([]Data, error) {
 // Вернуть ошибку базы данных на id = 2.
 // Иначе, вернуть nil.
 func (s *Service) GetErr(id int) error {
-    return s.Pgdb.GetErr(id)
+	return s.Pgdb.GetErr(id)
 }
 
 // Добавить перекодированную в Data строку JSON в базу данных.
@@ -226,6 +238,8 @@ func (s *Service) HireEmployee(req string, ctx context.Context) error {
 	if err := json.Unmarshal([]byte(req), &d); err != nil {
 		return err
 	}
+	timer := prometheus.NewTimer(pgdbDuration)
+	defer timer.ObserveDuration()
 	return s.Pgdb.HireEmployee(d, ctx)
 }
 
@@ -235,6 +249,8 @@ func (s *Service) UpdateEmployee(req string, ctx context.Context) error {
 	if err := json.Unmarshal([]byte(req), &d); err != nil {
 		return err
 	}
+	timer := prometheus.NewTimer(pgdbDuration)
+	defer timer.ObserveDuration()
 	return s.Pgdb.UpdateEmployee(d, ctx)
 }
 

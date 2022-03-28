@@ -22,7 +22,6 @@ type MockPgdb struct {
 	Rows []string // содержимое таблиц базы данных
 }
 
-
 func (m *MockPgdb) Close() {
 }
 
@@ -52,7 +51,7 @@ func (m *MockPgdb) GetAllEmployeeNonNames(_ context.Context) (Rows, error) {
 }
 
 func (m *MockPgdb) GetErr(id int) error {
-    return nil
+	return nil
 }
 
 // Удалить строку из базы данных. Функция не взаимодействует в m.Rows.
@@ -167,12 +166,12 @@ func TestModelGetAllEmployees(t *testing.T) {
 // Тесты получения записи по id.
 func TestModelGetEmployee(t *testing.T) {
 	var tests = []struct {
-		id       int
+		id  int
 		err bool
 	}{
-		{0, true},     // неверный id
+		{0, true},    // неверный id
 		{9999, true}, // записи не существует
-		{1, false},     // успех
+		{1, false},   // успех
 	}
 	assert := assert.New(t)
 	service, _ := NewModel()
@@ -182,7 +181,7 @@ func TestModelGetEmployee(t *testing.T) {
 		if err != nil {
 			assert.Equal(test.err, true, "Тест %d: %v\n", i, err)
 			continue
-		} 
+		}
 		assert.Equal(test.id, d.Id, "Тест %d\n", i)
 	}
 }

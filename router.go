@@ -18,6 +18,9 @@ import (
 	"syscall"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
@@ -26,19 +29,24 @@ const (
 	NO_CONTENT_ERROR = "Записей не найдено"
 	UNKNOWN_ERROR    = "Неизвестный статус ошибки"
 
-	API_EMPL_PATH   = "/api/v1/employees"
-	API_ERR_PATH   = "/api/v1/error"
+	API_EMPL_PATH = "/api/v1/employees"
+	API_ERR_PATH  = "/api/v1/error"
 	API_INFO_PATH = "/tech/info"
+	API_METRICS   = "/metrics"
 
-	TYPE_JSON  = "application/json"
+	TYPE_JSON = "application/json"
 )
 
-// Структура сервер
 type Router struct {
 	M   Model
 	R   *mux.Router
 	Srv http.Server
 }
+
+var httpDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+	Name: "http_response_time_seconds",
+	Help: "Продолжительность HTTP запросов.",
+})
 
 // Установить функции для обработки запросов.
 func (r *Router) MakeRoutes() {
@@ -49,6 +57,7 @@ func (r *Router) MakeRoutes() {
 	r.R.HandleFunc(API_EMPL_PATH, r.HireEmployee).Methods("POST")
 	r.R.HandleFunc(API_EMPL_PATH, r.UpdateEmployee).Methods("PUT")
 	r.R.HandleFunc(API_INFO_PATH, r.GetTechInfo).Methods("GET")
+	r.R.Handle(API_METRICS, promhttp.Handler()).Methods("GET")
 }
 
 // Запустить сервер
@@ -63,7 +72,7 @@ func (r *Router) Start() {
 			log.Fatal(err)
 		}
 	}()
-    log.Printf("Запуск сервера на %s:%s\n", cfg.Prog.Addr, cfg.Prog.Port)
+	log.Printf("Запуск сервера на %s:%s\n", cfg.Prog.Addr, cfg.Prog.Port)
 	log.Fatal(r.Srv.ListenAndServe())
 }
 
@@ -90,8 +99,7 @@ func (r *Router) FireEmployee(w http.ResponseWriter, req *http.Request) {
 	}
 	// 2. Сделать запрос
 	if err := r.M.FireEmployee(id, req.Context()); err != nil {
-        writeDbErr(w, err)
-		//writeErr(w, http.StatusInternalServerError, err.Error())
+		writeDbErr(w, err)
 		return
 	}
 }
@@ -99,7 +107,7 @@ func (r *Router) FireEmployee(w http.ResponseWriter, req *http.Request) {
 // Вернуть middleware функцию.
 // Убедиться, что Accept header запроса - XML или JSON.
 // Иначе вернуть ошибку.
-func accept(f http.HandlerFunc) http.HandlerFunc {
+func accept(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Header.Get("Accept") {
 		case "application/json": // OK
@@ -108,7 +116,7 @@ func accept(f http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "не XML/JSON Accept header")
 			return
 		}
-		f(w, r)
+		next(w, r)
 	}
 }
 
@@ -119,12 +127,8 @@ func (r *Router) GetAllEmployees(w http.ResponseWriter, req *http.Request) {
 	// 1. Сделать запрос.
 	data, err := r.M.GetAllEmployees(req.Context())
 	if err != nil {
-        writeDbErr(w, err)
-		//writeErr(w, http.StatusInternalServerError, err.Error())
+		writeDbErr(w, err)
 		return
-	//} else if data == nil {
-	//	w.WriteHeader(http.StatusNoContent)
-	//	return
 	}
 	// 2. Перекодировать запрос в формат, соответствующий header Accept.
 	var buf bytes.Buffer // конвертированные данные
@@ -171,11 +175,11 @@ func (r *Router) GetErr(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// 2. Сделать запрос
-    err = r.M.GetErr(id)
-    if err != nil {
-        writeDbErr(w, err)
-        return
-    }
+	err = r.M.GetErr(id)
+	if err != nil {
+		writeDbErr(w, err)
+		return
+	}
 }
 
 // Запросить данные из модели с переданным аргументом id.
@@ -197,12 +201,8 @@ func (r *Router) GetEmployee(w http.ResponseWriter, req *http.Request) {
 	// 2. Сделать запрос
 	data, err := r.M.GetEmployee(id, req.Context())
 	if err != nil {
-        writeDbErr(w, err)
-		//writeErr(w, http.StatusInternalServerError, err.Error())
+		writeDbErr(w, err)
 		return
-    //} else if data == nil {
-    //	w.WriteHeader(http.StatusNoContent)
-    //	return
 	}
 	// 3. Перекодировать запрос в JSON и вернуть клиенту
 	datajson, err := json.Marshal(data)
@@ -246,7 +246,7 @@ func (r *Router) HireEmployee(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := r.M.HireEmployee(buf.String(), req.Context()); err != nil {
-        writeDbErr(w, err)
+		writeDbErr(w, err)
 		return
 	}
 	// 3. Вернуть код 201
@@ -273,7 +273,7 @@ func (r *Router) UpdateEmployee(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := r.M.UpdateEmployee(buf.String(), req.Context()); err != nil {
-        writeDbErr(w, err)
+		writeDbErr(w, err)
 		return
 	}
 }
@@ -287,10 +287,21 @@ func NewRouter() (*Router, error) {
 	}
 	r.M = m
 	r.R = mux.NewRouter()
-    r.Srv.Addr = cfg.Prog.Addr + ":" + cfg.Prog.Port
+	r.Srv.Addr = cfg.Prog.Addr + ":" + cfg.Prog.Port
 	r.Srv.Handler = r.R
 
+	r.R.Use(durationMiddleware)
+
 	return &r, nil
+}
+
+// Измерить длительность удовлетворения HTTP запроса
+func durationMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		timer := prometheus.NewTimer(httpDuration)
+		next.ServeHTTP(w, r)
+		timer.ObserveDuration()
+	})
 }
 
 // Проверить content-type запроса.
@@ -309,11 +320,11 @@ type ResponseError struct {
 
 // Вызвать writeErr с аргументами зависящими от типа ошибки базы данных.
 func writeDbErr(w http.ResponseWriter, err error) {
-    if err == dbNA {
-        writeErr(w, http.StatusInternalServerError, dbNA.Error())
-    } else {
-        writeErr(w, http.StatusBadRequest, err.Error())
-    }
+	if err == dbNA {
+		writeErr(w, http.StatusInternalServerError, dbNA.Error())
+	} else {
+		writeErr(w, http.StatusBadRequest, err.Error())
+	}
 }
 
 // Записать ошибку в формате RFC 7807 в w.

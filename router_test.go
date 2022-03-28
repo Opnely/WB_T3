@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-
 // Тип запроса для функции makeRequest
 type Request struct {
 	Body         io.Reader
@@ -92,7 +91,6 @@ func TestRouterGetAllEmployees(t *testing.T) {
 		// 1. Проверить код возврата в результате
 		assert.Equal(test.status, resp.StatusCode, "Тест %d\n", i)
 		if resp.StatusCode != http.StatusOK {
-			//io.Copy(os.Stdout, resp.Body)
 			resp.Body.Close()
 			continue
 		}
@@ -165,24 +163,27 @@ func TestRouterGetEmployee(t *testing.T) {
 
 // Тесты ошибок базы данных.
 func TestRouterErrors(t *testing.T) {
-    var tests = []struct{id string; status int}{
-        {"", http.StatusNotFound}, // неизвестная страница
-        {"1", http.StatusBadRequest}, // плохой запрос
-        {"2", http.StatusInternalServerError}, // внутренняя ошибка
-        {"3", http.StatusOK}, // успех
-    }
+	var tests = []struct {
+		id     string
+		status int
+	}{
+		{"", http.StatusNotFound},             // неизвестная страница
+		{"1", http.StatusBadRequest},          // плохой запрос
+		{"2", http.StatusInternalServerError}, // внутренняя ошибка
+		{"3", http.StatusOK},                  // успех
+	}
 	assert := assert.New(t)
-    for i, test := range tests {
+	for i, test := range tests {
 		req := &Request{Method: "GET", URL: cfg.Prog.ErrUrl + "/" + test.id}
 		resp, err := makeRequest(req)
-        if err != nil {
+		if err != nil {
 			t.Logf("makeRequest: %v\n", err)
 			continue
 		}
-        //io.Copy(os.Stdout, resp.Body)
-        resp.Body.Close()
+		//io.Copy(os.Stdout, resp.Body)
+		resp.Body.Close()
 		assert.Equal(test.status, resp.StatusCode, "Тест %d\n", i)
-    }
+	}
 }
 
 // Тесты запроса удаления записи по id.
@@ -192,9 +193,9 @@ func TestRouterRemoveEmployee(t *testing.T) {
 		id     string
 		status int
 	}{
-		{"a", http.StatusBadRequest},             // плохой id
+		{"a", http.StatusBadRequest},    // плохой id
 		{"9999", http.StatusBadRequest}, // id не найден
-		{"last", http.StatusOK},                  // успех
+		{"last", http.StatusOK},         // успех
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
@@ -227,10 +228,10 @@ func TestRouterUpdateEmployee(t *testing.T) {
 		json, content string
 		status        int
 	}{
-		{"", "none", http.StatusBadRequest},                      // не json
-		{"", "application/json", http.StatusBadRequest},          // "" JSON
+		{"", "none", http.StatusBadRequest},             // не json
+		{"", "application/json", http.StatusBadRequest}, // "" JSON
 		{t1, "application/json", http.StatusBadRequest}, // нет id
-		{t2, "application/json", http.StatusOK},                  // успех
+		{t2, "application/json", http.StatusOK},         // успех
 	}
 	assert := assert.New(t)
 	for i, test := range tests {
@@ -416,6 +417,6 @@ func TestRouterTechInfo(t *testing.T) {
 		return
 	}
 	resp.Body.Close()
-	assert.Equal(cfg.Prog.Info, buf.String(), "%q != %q\n", 
-        cfg.Prog.Info, buf.String())
+	assert.Equal(cfg.Prog.Info, buf.String(), "%q != %q\n",
+		cfg.Prog.Info, buf.String())
 }

@@ -10,31 +10,33 @@ import (
 
 // Тесты ошибок базы данных.
 func TestDbErrors(t *testing.T) {
-    var tests = []struct{id int; err, dbNAerr bool}{
-        {1, true, false}, // плохой запрос
-        {2, true, true}, // внутренняя ошибка
-        {3, false, false}, // успех
-    }
+	var tests = []struct {
+		id           int
+		err, dbNAerr bool
+	}{
+		{1, true, false},  // плохой запрос
+		{2, true, true},   // внутренняя ошибка
+		{3, false, false}, // успех
+	}
 	assert := assert.New(t)
 	db, err := NewPostgresdb()
 	defer db.Close()
 	if err != nil {
 		t.Logf("NewPostgresdb: %v\n", err)
 		return
-    }
-    for i, test := range tests {
-        err := db.GetErr(test.id)
-        if err != nil {
-            assert.Equal(test.err, true, "Тест %d\n", i)
-            if test.id == 2 {
-                assert.Equal(err, dbNA, "Тест %d\n", i)
-            }
-            continue
-        }
-        assert.Equal(test.err, false, "Тест %d\n", i)
-    }
+	}
+	for i, test := range tests {
+		err := db.GetErr(test.id)
+		if err != nil {
+			assert.Equal(test.err, true, "Тест %d\n", i)
+			if test.id == 2 {
+				assert.Equal(err, dbNA, "Тест %d\n", i)
+			}
+			continue
+		}
+		assert.Equal(test.err, false, "Тест %d\n", i)
+	}
 }
-
 
 // Тесты фукнции удаления строки. Все тесты, кроме первого запрашивают
 // самый высокий id и удаляют его.
@@ -288,4 +290,3 @@ func TestDbUpdateEmployee(t *testing.T) {
 		assert.Equal(test.err, err != nil, "Тест %d: %v\n", i, err)
 	}
 }
-

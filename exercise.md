@@ -191,10 +191,19 @@ https://medium.com/southbridge/prometheus-monitoring-ba8fbda6e83   ([original](h
 [recommended blog](https://blog.pvincent.io/2017/12/prometheus-blog-series-part-1-metrics-and-labels/)
 [example](https://dev.to/metonymicsmokey/custom-prometheus-metrics-with-go-520n)
 [metric types](https://chronosphere.io/learn/an-introduction-to-the-four-primary-types-of-prometheus-metrics/)
-
+[http response time example](https://github.com/brancz/prometheus-example-app/blob/master/main.go)
+[basic tutorial and http response time full example](https://www.jajaldoang.com/post/monitor-golang-app-with-prometheus-grafana/)
+[another good tutorial](https://blog.pvincent.io/2017/12/prometheus-blog-series-part-4-instrumenting-code-in-go-and-java/)
+[tutorial with db](https://percona.community/blog/2021/07/21/create-your-own-exporter-in-go/)
+[example with http request and timer](https://gabrieltanner.org/blog/collecting-prometheus-metrics-in-golang)
+[official Go guide](https://prometheus.io/docs/guides/go-application/)
 
 Затем добавить в сервис отдельный роут /metrics (без префиксов /api/v1 или /tech) в котором будут отражены:
 
 * метрики на успешные (200+) и неуспешные запросы (400+ и 500+)
+default: promhttp_metric_handler_requests_total for 200, 500, and 503
 * метрики на время выполнения запроса и время ответа от бд
 * метрики на используемую память и количество потраченного процессорного времени
+heap go_gc_heap_allocs_bytes_total 
+cpu process_cpu_seconds_total counter
+VM process_virtual_memory_bytes gauge
