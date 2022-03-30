@@ -10,12 +10,12 @@ import (
 )
 
 // Тесты считывания всех строк из базы данных.
-func TestModelDbGetAllEmployees(t *testing.T) {
+func TestStorageDbGetAllEmployees(t *testing.T) {
 	var tests = []struct{ err bool }{
 		{false}, // успех
 	}
 	assert := assert.New(t)
-	service, _ := NewModel()
+	service, _ := NewStorage()
 	for i, test := range tests {
 		_, err := service.GetAllEmployees(context.Background())
 		assert.Equal(test.err, err != nil, "Тест %d: %v\n", i, err)
@@ -23,12 +23,12 @@ func TestModelDbGetAllEmployees(t *testing.T) {
 }
 
 // Тесты конкурентного считывания всех строк из базы данных.
-func TestModelDbGetAllEmployeesConcur(t *testing.T) {
+func TestStorageDbGetAllEmployeesConcur(t *testing.T) {
 	var tests = []struct{ err bool }{
 		{false}, // успех
 	}
 	assert := assert.New(t)
-	service, _ := NewModel()
+	service, _ := NewStorage()
 	for i, test := range tests {
 		_, err := service.GetAllEmployeesConcur(context.Background())
 		assert.Equal(test.err, err != nil, "Тест %d: %v\n", i, err)
@@ -37,9 +37,9 @@ func TestModelDbGetAllEmployeesConcur(t *testing.T) {
 
 // Тест сравнения результатов обычного считывания всех строк из базы данных
 // и конкурентного.
-func TestModelDbGetAllEmployeesComparison(t *testing.T) {
+func TestStorageDbGetAllEmployeesComparison(t *testing.T) {
 	assert := assert.New(t)
-	service, _ := NewModel()
+	service, _ := NewStorage()
 
 	// 1. Считать всех работников двумя способами
 	d1, err := service.GetAllEmployees(context.Background())

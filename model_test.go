@@ -130,7 +130,7 @@ func NewMockRows(rows []string) Rows {
 
 // 2. Тесты
 // Тесты добавления записи в базу данных.
-func TestModelHireEmployee(t *testing.T) {
+func TestStorageHireEmployee(t *testing.T) {
 	var tests = []struct {
 		json string
 		err  bool
@@ -141,7 +141,7 @@ func TestModelHireEmployee(t *testing.T) {
 		{`{"name":"jane"}`, false}, // успех
 	}
 	assert := assert.New(t)
-	service, _ := NewModel()
+	service, _ := NewStorage()
 	service.ChangeDatabase(NewMockPgdb())
 	for i, test := range tests {
 		err := service.HireEmployee(test.json, context.Background())
@@ -150,12 +150,12 @@ func TestModelHireEmployee(t *testing.T) {
 }
 
 // Тесты считывания всех строк из базы данных.
-func TestModelGetAllEmployees(t *testing.T) {
+func TestStorageGetAllEmployees(t *testing.T) {
 	var tests = []struct{ err bool }{
 		{false}, // успех
 	}
 	assert := assert.New(t)
-	service, _ := NewModel()
+	service, _ := NewStorage()
 	service.ChangeDatabase(NewMockPgdb())
 	for i, test := range tests {
 		_, err := service.GetAllEmployees(context.Background())
@@ -164,7 +164,7 @@ func TestModelGetAllEmployees(t *testing.T) {
 }
 
 // Тесты получения записи по id.
-func TestModelGetEmployee(t *testing.T) {
+func TestStorageGetEmployee(t *testing.T) {
 	var tests = []struct {
 		id  int
 		err bool
@@ -174,7 +174,7 @@ func TestModelGetEmployee(t *testing.T) {
 		{1, false},   // успех
 	}
 	assert := assert.New(t)
-	service, _ := NewModel()
+	service, _ := NewStorage()
 	service.ChangeDatabase(NewMockPgdb())
 	for i, test := range tests {
 		d, err := service.GetEmployee(test.id, context.Background())
@@ -187,7 +187,7 @@ func TestModelGetEmployee(t *testing.T) {
 }
 
 // Тесты функции удаления строки.
-func TestModelFireEmployee(t *testing.T) {
+func TestStorageFireEmployee(t *testing.T) {
 	var tests = []struct {
 		id  int
 		err bool
@@ -197,7 +197,7 @@ func TestModelFireEmployee(t *testing.T) {
 		{2, false}, // успех
 	}
 	assert := assert.New(t)
-	service, _ := NewModel()
+	service, _ := NewStorage()
 	service.ChangeDatabase(NewMockPgdb())
 	for i, test := range tests {
 		err := service.FireEmployee(test.id, context.Background())
@@ -206,7 +206,7 @@ func TestModelFireEmployee(t *testing.T) {
 }
 
 // Тесты обновления записи в базе данных.
-func TestModelUpdateEmployee(t *testing.T) {
+func TestStorageUpdateEmployee(t *testing.T) {
 	var tests = []struct {
 		json string
 		err  bool
@@ -217,7 +217,7 @@ func TestModelUpdateEmployee(t *testing.T) {
 		{`{"name":"jane"}`, false}, // успех
 	}
 	assert := assert.New(t)
-	service, _ := NewModel()
+	service, _ := NewStorage()
 	service.ChangeDatabase(NewMockPgdb())
 	for i, test := range tests {
 		err := service.UpdateEmployee(test.json, context.Background())

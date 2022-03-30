@@ -38,31 +38,30 @@ const (
 )
 
 type Router struct {
-	M   Model
-	R   *mux.Router
+	Stg Storage
 	Srv http.Server
 }
 
-var httpDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-	Name: "http_response_time_seconds",
-	Help: "Продолжительность HTTP запросов.",
-})
+var httpDuration = promauto.NewSummaryVec(prometheus.SummaryOpts{
+	Help:       "Продолжительность HTTP запросов.",
+	Name:       "http_response_time_seconds",
+	Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+}, []string{"path"})
 
 // Установить функции для обработки запросов.
-func (r *Router) MakeRoutes() {
-	r.R.HandleFunc(API_ERR_PATH+"/{id}", r.GetErr).Methods("GET")
-	r.R.HandleFunc(API_EMPL_PATH+"/{id}", r.FireEmployee).Methods("DELETE")
-	r.R.HandleFunc(API_EMPL_PATH, accept(r.GetAllEmployees)).Methods("GET")
-	r.R.HandleFunc(API_EMPL_PATH+"/{id}", r.GetEmployee).Methods("GET")
-	r.R.HandleFunc(API_EMPL_PATH, r.HireEmployee).Methods("POST")
-	r.R.HandleFunc(API_EMPL_PATH, r.UpdateEmployee).Methods("PUT")
-	r.R.HandleFunc(API_INFO_PATH, r.GetTechInfo).Methods("GET")
-	r.R.Handle(API_METRICS, promhttp.Handler()).Methods("GET")
+func (r *Router) MakeRoutes(mr *mux.Router) {
+	mr.HandleFunc(API_ERR_PATH+"/{id}", r.GetErr).Methods("GET")
+	mr.HandleFunc(API_EMPL_PATH+"/{id}", r.FireEmployee).Methods("DELETE")
+	mr.HandleFunc(API_EMPL_PATH, accept(r.GetAllEmployees)).Methods("GET")
+	mr.HandleFunc(API_EMPL_PATH+"/{id}", r.GetEmployee).Methods("GET")
+	mr.HandleFunc(API_EMPL_PATH, r.HireEmployee).Methods("POST")
+	mr.HandleFunc(API_EMPL_PATH, r.UpdateEmployee).Methods("PUT")
+	mr.HandleFunc(API_INFO_PATH, r.GetTechInfo).Methods("GET")
+	mr.Handle(API_METRICS, promhttp.Handler()).Methods("GET")
 }
 
 // Запустить сервер
 func (r *Router) Start() {
-	r.MakeRoutes()
 	go func() {
 		shutdownCh := make(chan os.Signal, 1)
 		signal.Notify(shutdownCh, syscall.SIGINT, syscall.SIGTERM)
@@ -78,7 +77,7 @@ func (r *Router) Start() {
 
 // Завершить работу сервера. Закрыть переменную модель.
 func (r *Router) Shutdown(ctx context.Context) error {
-	r.M.Close()
+	r.Stg.Close()
 	return r.Srv.Shutdown(ctx)
 }
 
@@ -98,7 +97,7 @@ func (r *Router) FireEmployee(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// 2. Сделать запрос
-	if err := r.M.FireEmployee(id, req.Context()); err != nil {
+	if err := r.Stg.FireEmployee(id, req.Context()); err != nil {
 		writeDbErr(w, err)
 		return
 	}
@@ -125,7 +124,7 @@ func accept(next http.HandlerFunc) http.HandlerFunc {
 // В случае успеха вернуть данные в формате JSON или XML.
 func (r *Router) GetAllEmployees(w http.ResponseWriter, req *http.Request) {
 	// 1. Сделать запрос.
-	data, err := r.M.GetAllEmployees(req.Context())
+	data, err := r.Stg.GetAllEmployees(req.Context())
 	if err != nil {
 		writeDbErr(w, err)
 		return
@@ -175,7 +174,7 @@ func (r *Router) GetErr(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// 2. Сделать запрос
-	err = r.M.GetErr(id)
+	err = r.Stg.GetErr(id)
 	if err != nil {
 		writeDbErr(w, err)
 		return
@@ -199,7 +198,7 @@ func (r *Router) GetEmployee(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// 2. Сделать запрос
-	data, err := r.M.GetEmployee(id, req.Context())
+	data, err := r.Stg.GetEmployee(id, req.Context())
 	if err != nil {
 		writeDbErr(w, err)
 		return
@@ -245,7 +244,7 @@ func (r *Router) HireEmployee(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := r.M.HireEmployee(buf.String(), req.Context()); err != nil {
+	if err := r.Stg.HireEmployee(buf.String(), req.Context()); err != nil {
 		writeDbErr(w, err)
 		return
 	}
@@ -272,7 +271,7 @@ func (r *Router) UpdateEmployee(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := r.M.UpdateEmployee(buf.String(), req.Context()); err != nil {
+	if err := r.Stg.UpdateEmployee(buf.String(), req.Context()); err != nil {
 		writeDbErr(w, err)
 		return
 	}
@@ -281,16 +280,17 @@ func (r *Router) UpdateEmployee(w http.ResponseWriter, req *http.Request) {
 // Создать новую переменную Router.
 func NewRouter() (*Router, error) {
 	var r Router
-	m, err := NewModel()
+	m, err := NewStorage()
 	if err != nil {
-		return nil, fmt.Errorf("NewModel: %v\n", err)
+		return nil, fmt.Errorf("NewStorage: %v\n", err)
 	}
-	r.M = m
-	r.R = mux.NewRouter()
+	r.Stg = m
+	mr := mux.NewRouter()
 	r.Srv.Addr = cfg.Prog.Addr + ":" + cfg.Prog.Port
-	r.Srv.Handler = r.R
+	r.Srv.Handler = mr
 
-	r.R.Use(durationMiddleware)
+	r.MakeRoutes(mr)
+	mr.Use(durationMiddleware)
 
 	return &r, nil
 }
@@ -298,7 +298,12 @@ func NewRouter() (*Router, error) {
 // Измерить длительность удовлетворения HTTP запроса
 func durationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		timer := prometheus.NewTimer(httpDuration)
+		route := mux.CurrentRoute(r)
+		path, err := route.GetPathTemplate()
+		if err != nil {
+			log.Printf("GetPathTemplate(): %v\n", err)
+		}
+		timer := prometheus.NewTimer(httpDuration.WithLabelValues(path))
 		next.ServeHTTP(w, r)
 		timer.ObserveDuration()
 	})
@@ -355,7 +360,6 @@ func writeErr(w http.ResponseWriter, status int, detail string) {
 	}
 	_, err = w.Write(json)
 	if err != nil {
-		fmt.Printf("jjjjjjj: %d\n", status)
 		log.Printf("Write: %v\n", err)
 		return
 	}

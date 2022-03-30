@@ -12,8 +12,6 @@ import (
 	"sync"
 
 	"github.com/BurntSushi/toml"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const (
@@ -24,7 +22,7 @@ const (
 
 var (
 	dbNA = errors.New("Хранилище временно недоступно") // все ошибки сервера
-	cfg  Config                                        // заполняется функцией init()
+	cfg  Config                                        // заполняется init()
 )
 
 // Структура с переменными конфигурации. Заполняется из файла CONFIG_FNAME
@@ -71,11 +69,6 @@ func init() {
 	fmt.Printf("Config: %v\n", cfg)
 }
 
-var pgdbDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-	Name: "postgresdb_response_time_seconds",
-	Help: "Продолжительность запросов базы данных postgresdb.",
-})
-
 // Поля одной записи таблицы базы данных
 type Data struct {
 	Id        int    `json:"id"`
@@ -88,7 +81,7 @@ type Data struct {
 }
 
 // Абстракция структуры Service
-type Model interface {
+type Storage interface {
 	ChangeDatabase(Postgresdb)
 	Close()
 	FireEmployee(int, context.Context) error
@@ -112,8 +105,6 @@ func (s *Service) Close() {
 
 // Удалить запись id из базы данных.
 func (s *Service) FireEmployee(id int, ctx context.Context) error {
-	timer := prometheus.NewTimer(pgdbDuration)
-	defer timer.ObserveDuration()
 	return s.Pgdb.FireEmployee(id, ctx)
 }
 
@@ -121,9 +112,7 @@ func (s *Service) FireEmployee(id int, ctx context.Context) error {
 // Если функция возвращает (nil, nil), запрос выполнен успешно, но данных не
 // найдено.
 func (s *Service) GetEmployee(id int, ctx context.Context) (*Data, error) {
-	timer := prometheus.NewTimer(pgdbDuration)
 	rows, err := s.Pgdb.GetEmployee(id, ctx)
-	timer.ObserveDuration()
 	if err != nil {
 		return nil, err
 	}
@@ -143,9 +132,7 @@ func (s *Service) GetEmployee(id int, ctx context.Context) (*Data, error) {
 
 // Вернуть срез структур Data со всеми данными из базы данных.
 func (s *Service) GetAllEmployees(ctx context.Context) ([]Data, error) {
-	timer := prometheus.NewTimer(pgdbDuration)
 	rows, err := s.Pgdb.GetAllEmployees(ctx)
-	timer.ObserveDuration()
 	if err != nil {
 		return nil, err
 	}
@@ -174,9 +161,7 @@ func (s *Service) GetAllEmployeesConcur(ctx context.Context) ([]Data, error) {
 	go func() {
 		defer wg.Done()
 		var rows Rows
-		timer := prometheus.NewTimer(pgdbDuration)
 		rows, goerr = s.Pgdb.GetAllEmployeeNames(ctx)
-		timer.ObserveDuration()
 		if goerr != nil {
 			return
 		}
@@ -191,9 +176,7 @@ func (s *Service) GetAllEmployeesConcur(ctx context.Context) ([]Data, error) {
 		}
 	}()
 	// 2. Считать данные в срез структур Data
-	timer := prometheus.NewTimer(pgdbDuration)
 	rows, err := s.Pgdb.GetAllEmployeeNonNames(ctx)
-	timer.ObserveDuration()
 	if err != nil {
 		return nil, err
 	}
@@ -238,8 +221,6 @@ func (s *Service) HireEmployee(req string, ctx context.Context) error {
 	if err := json.Unmarshal([]byte(req), &d); err != nil {
 		return err
 	}
-	timer := prometheus.NewTimer(pgdbDuration)
-	defer timer.ObserveDuration()
 	return s.Pgdb.HireEmployee(d, ctx)
 }
 
@@ -249,8 +230,6 @@ func (s *Service) UpdateEmployee(req string, ctx context.Context) error {
 	if err := json.Unmarshal([]byte(req), &d); err != nil {
 		return err
 	}
-	timer := prometheus.NewTimer(pgdbDuration)
-	defer timer.ObserveDuration()
 	return s.Pgdb.UpdateEmployee(d, ctx)
 }
 
@@ -260,7 +239,7 @@ func (s *Service) ChangeDatabase(db Postgresdb) {
 }
 
 // Создать новую переменную Service.
-func NewModel() (Model, error) {
+func NewStorage() (Storage, error) {
 	db, err := NewPostgresdb()
 	if err != nil {
 		return nil, err
