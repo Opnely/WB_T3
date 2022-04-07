@@ -286,7 +286,8 @@ func NewRouter() (*Router, error) {
 	}
 	r.Stg = m
 	mr := mux.NewRouter()
-	r.Srv.Addr = cfg.Prog.Addr + ":" + cfg.Prog.Port
+	//r.Srv.Addr = cfg.Prog.Addr + ":" + cfg.Prog.Port
+	r.Srv.Addr = ":" + cfg.Prog.Port
 	r.Srv.Handler = mr
 
 	r.MakeRoutes(mr)

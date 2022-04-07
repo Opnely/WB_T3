@@ -207,3 +207,78 @@ default: promhttp_metric_handler_requests_total for 200, 500, and 503
 heap go_gc_heap_allocs_bytes_total 
 cpu process_cpu_seconds_total counter
 VM process_virtual_memory_bytes gauge
+
+
+## Задание 7.
+# Docker контейнеры. Minikube/Kubernetes. Health-checks.
+Цель: научиться запускать приложение в kubernetes.
+
+* Установить Docker 
+* Установить [minikube](https://kubernetes.io/ru/docs/tutorials/hello-minikube/)
+[original](https://kubernetes.io/docs/tutorials/hello-minikube/)
+[tutorial](https://minikube.sigs.k8s.io/docs/start/)
+[common ops](https://minikube.sigs.k8s.io/docs/handbook/)
+[gitlab pulling](https://juju.is/tutorials/using-gitlab-as-a-container-registry#7-pull-your-container)
+[gitlab secret](https://blog.cloudhelix.io/using-a-private-docker-registry-with-kubernetes-f8d5f6b8f646)
+[secret docs](https://kubernetes.io/docs/concepts/configuration/secret/)
+* Написать kube manifest (deployment, service).
+* Запустить Docker-контейнер с приложением в кубе.
+* Научиться работать с секретами. Поместить в секреты db-user, db-password. Убрать их из конфига, если они там были.
+* Написать healthcheck пробы для deployment, сделанного ранее (liveness и readiness probes)
+
+Чтобы запустить приложение в кубе, необходимо дать возможность кубу выкачивать Docker-образ из registry GitLab'а. Для этого в манифест нужно указать секрет gitlab-registry-secret.
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitlab-registry-secret
+data:
+  .dockerconfigjson: ew0KICAiYXV0aHMiOiB7DQogICAgImdpdC53aWxkYmVycmllcy5ydTo0NTY3Ijogew0KICAgICAgImF1dGgiOiAiY21WbmFYTjBjbmxmYzNaak9uTTBXbE5JVDJkSWQwYzNZdz09Ig0KICAgIH0NCiAgfQ0KfQ==
+type: kubernetes.io/dockerconfigjson
+```
+
+Вспомогательная литература:
+
+* Using docker by Adrian Mouat.pdf
+* Kubernetes in Action.pdf
+* (by-Bilgin-Ibryam,-Roland-Hu)-Kubernetes-Patterns-5233872-(z-lib.org).pdf
+# Nats
+
+
+
+## Задание 8.
+Цель: научиться работать с nats
+
+Часть 1:
+
+1) Написать таблицу на базе(очередь сотрудников), куда будут попадать созданные сотрудники. Нужна новая таблица, которая должна называться например employees_queue. Таким образом в эту таблицу будут падать только новые сотрудники, с которыми можно производить манипуляции не трогая основную большую таблицу.
+2) Написать 2 хранимые процедуры - получить данные из этой таблицы, конфирм - удаление данных из этой таблицы. 
+3) Реализовать на новый бэкграунд сервис - в нем реализовать процесс забора данных из очереди на базе, публикации их в натс, и конфирм на базе.
+
+Часть 2:
+
+1) Реализовать бэкграунд сервис который читает данные из натса и сохраняет их в файлик
+
+Темы для изучения:
+nats, nats streaming
+
+библиотеки для работе с натсом в го:
+"github.com/nats-io/stan.go"
+"github.com/nats-io/nats.go"
+
+Прим 1.
+он должен запускаться сам и работать в отдельной горутине
+технические пути в сервисе должны быть доступны в сервисе (tech/info,  metrics)
+иными словами нужен новый сервис, в котором не будет тех путей которые были в первом сервисе (с префиксом api/v1) иначе это будет лишний код который будет мешаться
+
+Прим 2.
+первые несколько заданий были посвящены рест апи сервису(rest api), так обычно называют сервисы, которые имеют конечные точки (endpoints), на эти конечные точки происходят запросы - пользователем сервиса может выступать другой сервис, пользователь или интерфейс.
+вторая часто используемая категория сервисов это background сервис, такой сервис не имеет endpoints кроме технических путей(метрики, health check)
+бэкграунд сервисы выполняют разнообразные функции без вмешательства пользователя, при старте сервиса запускается какой-то процесс и он выполняется на протяжении всей жизни этого сервиса, пока он не будет выключен.
+
+по сути есть два главных вида таких сервисов:
+1) выполнение задания, которое выполняется в сервисе в бесконечном цикле каждые N минут (практически все сервисы синхронизаторы разных систем работают таким образом, раз в N минут/секунд делают запрос на забор данных из одной системы, и затем данные сохраняются в другую систему); 
+2) процесс прослушивания натса/кафки и других подобных систем (там происходит бесконечное ожидание новых событий, при поступлении событий выполняются необходимые действия)
+
+

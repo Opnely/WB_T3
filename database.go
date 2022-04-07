@@ -28,8 +28,8 @@ const (
 
 // Интерфейс базы данных сотрудников
 type Postgresdb interface {
-	FireEmployee(int, context.Context) error
 	Close()
+	FireEmployee(int, context.Context) error
 	GetAllEmployees(context.Context) (Rows, error)
 	GetAllEmployeeNames(context.Context) (Rows, error)
 	GetAllEmployeeNonNames(context.Context) (Rows, error)
@@ -58,7 +58,7 @@ func (p *PostgreSQL) Close() {
 
 // Удалить запись id таблицы employees.employees базы данных.
 func (p *PostgreSQL) FireEmployee(id int, ctx context.Context) error {
-	fn := "Fire employee"
+	fn := "FireEmployee"
 	timer := prometheus.NewTimer(dbReqDuration.WithLabelValues(fn))
 	res, err := p.Conn.ExecContext(ctx,
 		"SELECT employees.employee_remove($1);", id)
@@ -80,7 +80,7 @@ func (p *PostgreSQL) FireEmployee(id int, ctx context.Context) error {
 // Запросить все поля таблицы employees.employees базы данных.
 // Вернуть поля в интерфейсе Rows и ошибку.
 func (p *PostgreSQL) GetAllEmployees(ctx context.Context) (Rows, error) {
-	fn := "Get all employees"
+	fn := "GetAllEmployees"
 	timer := prometheus.NewTimer(dbReqDuration.WithLabelValues(fn))
 	rows, err := p.Conn.QueryContext(ctx,
 		"SELECT * FROM employees.get_all();")
@@ -94,7 +94,7 @@ func (p *PostgreSQL) GetAllEmployees(ctx context.Context) (Rows, error) {
 // Запросить поля name, last_name и id таблицы employees.employees бд.
 // Вернуть поля в интерфейсе Rows и ошибку.
 func (p *PostgreSQL) GetAllEmployeeNames(ctx context.Context) (Rows, error) {
-	fn := "Get all employee names"
+	fn := "GetAllEmployeeNames"
 	timer := prometheus.NewTimer(dbReqDuration.WithLabelValues(fn))
 	rows, err := p.Conn.QueryContext(ctx,
 		"SELECT * FROM employees.employees_get_all_part1();")
@@ -108,7 +108,7 @@ func (p *PostgreSQL) GetAllEmployeeNames(ctx context.Context) (Rows, error) {
 // Запросить все поля, кроме name и last_name таблицы employees.employees бд.
 // Вернуть поля в интерфейсе Rows и ошибку.
 func (p *PostgreSQL) GetAllEmployeeNonNames(ctx context.Context) (Rows, error) {
-	fn := "Get all employee non-names"
+	fn := "GetAllEmployeeNonNames"
 	timer := prometheus.NewTimer(dbReqDuration.WithLabelValues(fn))
 	rows, err := p.Conn.QueryContext(ctx,
 		"SELECT * FROM employees.employees_get_all_part2();")
@@ -123,7 +123,7 @@ func (p *PostgreSQL) GetAllEmployeeNonNames(ctx context.Context) (Rows, error) {
 // Если данных не обнаружено, функция возвращает (nil, nil).
 // Вернуть поле в интерфейсе Rows и ошибку.
 func (p *PostgreSQL) GetEmployee(id int, ctx context.Context) (Rows, error) {
-	fn := "Get all employee"
+	fn := "GetEmployee"
 	timer := prometheus.NewTimer(dbReqDuration.WithLabelValues(fn))
 	rows, err := p.Conn.QueryContext(ctx,
 		"SELECT * FROM employees.employee_get($1);", id)
@@ -136,7 +136,7 @@ func (p *PostgreSQL) GetEmployee(id int, ctx context.Context) (Rows, error) {
 
 // Вернуть самый высокий id таблицы employees.employees базы данных и ошибку.
 func (p *PostgreSQL) GetHighestId(ctx context.Context) (int, error) {
-	fn := "Get highest employee id"
+	fn := "GetHighestId"
 	timer := prometheus.NewTimer(dbReqDuration.WithLabelValues(fn))
 	rows, err := p.Conn.QueryContext(ctx,
 		"SELECT id FROM employees.employees ORDER BY id DESC LIMIT 1;")
@@ -159,7 +159,7 @@ func (p *PostgreSQL) GetHighestId(ctx context.Context) (int, error) {
 // Вернуть ошибку базы данных на id = 2.
 // Иначе, вернуть nil.
 func (p *PostgreSQL) GetErr(id int) error {
-	fn := "Get err"
+	fn := "GetErr"
 	timer := prometheus.NewTimer(dbReqDuration.WithLabelValues(fn))
 	_, err := p.Conn.Exec("SELECT test.get_db_error($1);", id)
 	timer.ObserveDuration()
@@ -187,7 +187,7 @@ func (p *PostgreSQL) handleDbErr(origErr error) error {
 
 // Добавить запись d в таблицу employees.employees базы данных.
 func (p *PostgreSQL) HireEmployee(d Data, ctx context.Context) error {
-	fn := "Hire employee"
+	fn := "HireEmployee"
 	timer := prometheus.NewTimer(dbReqDuration.WithLabelValues(fn))
 	res, err := p.Conn.ExecContext(ctx,
 		"SELECT employees.employee_add($1, $2, $3, $4, $5, $6);", d.FirstName,
@@ -209,7 +209,7 @@ func (p *PostgreSQL) HireEmployee(d Data, ctx context.Context) error {
 
 // Обновить запись d таблицы employees.employees базы данных.
 func (p *PostgreSQL) UpdateEmployee(d Data, ctx context.Context) error {
-	fn := "Update employee"
+	fn := "UpdateEmployee"
 	timer := prometheus.NewTimer(dbReqDuration.WithLabelValues(fn))
 	res, err := p.Conn.ExecContext(ctx,
 		"SELECT employees.employee_upd($1, $2, $3, $4, $5, $6, $7);", d.Id,

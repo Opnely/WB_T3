@@ -2,11 +2,11 @@ title = "Service Config File"
 
 [program]
 name = "employees"
-version = "1.5.0"
+version = "1.7.0"
 address = "localhost"
-port = "33890"
+port = "30313"
 
 [postgresdb]
 name = "postgresdb"
-address = "localhost"
+address = "host.minikube.internal"
 port = "5432"

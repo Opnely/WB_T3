@@ -20,11 +20,11 @@ func TestDbErrors(t *testing.T) {
 	}
 	assert := assert.New(t)
 	db, err := NewPostgresdb()
-	defer db.Close()
 	if err != nil {
 		t.Logf("NewPostgresdb: %v\n", err)
 		return
 	}
+	defer db.Close()
 	for i, test := range tests {
 		err := db.GetErr(test.id)
 		if err != nil {
@@ -38,6 +38,7 @@ func TestDbErrors(t *testing.T) {
 	}
 }
 
+// Тесты функций таблицы employees.employees
 // Тесты фукнции удаления строки. Все тесты, кроме первого запрашивают
 // самый высокий id и удаляют его.
 func TestDbFireEmployee(t *testing.T) {
@@ -269,8 +270,8 @@ func TestDbHireEmployee(t *testing.T) {
 
 // Тесты обновления записи в базе данных.
 func TestDbUpdateEmployee(t *testing.T) {
-	d1 := Data{FirstName: "Test", LastName: "Testov", MidName: "Testovich",
-		PhoneNum: "84951112233", Position: "Tester", DoneJobs: 10, Id: 10}
+	d1 := Data{FirstName: "ппп", LastName: "ггг", MidName: "fff",
+		PhoneNum: "79299999999", Position: "стажёр", DoneJobs: 2, Id: 1}
 	var tests = []struct {
 		data Data
 		err  bool

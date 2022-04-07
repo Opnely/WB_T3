@@ -1,0 +1,80 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitlab-registry-secret
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: "ewoJImF1dGhzIjogewoJCSJnaXRsYWIuY29tIjogewoJCQkiYXV0aCI6\
+ICJUM0J1Wld4NU9tZHNjR0YwTFRZdFVYSnZaV0oyUTBOMkxWazJhSEZ6ZVY5byIKCQl9LAoJCSJyZW\
+dpc3RyeS5naXRsYWIuY29tIjogewoJCQkiYXV0aCI6ICJiM0J1Wld4NU9tZHNjR0YwTFRZdFVYSnZa\
+V0oyUTBOMkxWazJhSEZ6ZVY5byIKCQl9Cgl9Cn0="
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+type: Opaque
+data:
+  user: cG9zdGdyZXNhZG1pbg==
+  password: YWRtaW4xMjM=
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-deploy
+spec:
+  replicas: 1
+  minReadySeconds: 10
+  selector:
+    matchLabels:
+      app: test_app
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      name: test_app
+      labels:
+        app: test_app
+    spec:
+      containers:
+        - image: registry.gitlab.com/te4197/test/t3
+          name: test-image
+          readinessProbe:
+            periodSeconds: 1
+            httpGet:
+              path: /tech/info
+              port: 30313
+          livenessProbe:
+            httpGet:
+              path: /tech/info
+              port: 30313
+          env:
+            - name: PGDB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: user
+            - name: PGDB_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: password
+      imagePullSecrets:
+        - name: gitlab-registry-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-service
+spec:
+  type: NodePort
+  ports:
+    - name: test-port
+      port: 30313
+      targetPort: 30313
+      nodePort: 30313
+  selector:
+    app: test_app

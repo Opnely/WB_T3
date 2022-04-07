@@ -66,7 +66,6 @@ func init() {
 	cfg.Prog.ServerUrl = "http://" + cfg.Prog.Addr + ":" + cfg.Prog.Port
 	cfg.Prog.EmplUrl = cfg.Prog.ServerUrl + API_EMPL_PATH
 	cfg.Prog.ErrUrl = cfg.Prog.ServerUrl + API_ERR_PATH
-	fmt.Printf("Config: %v\n", cfg)
 }
 
 // Поля одной записи таблицы базы данных
