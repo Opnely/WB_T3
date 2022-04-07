@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	CONFIG_FNAME = "../../Configs/config.toml"
+	CONFIG_FNAME = "configs/config.toml"
 	INFO_FMT     = `{"name": %q, "version": %q}`
 	MIN_ENTRIES  = 64 // начальный размер среза для считывания записей из бд
 )
@@ -52,7 +52,7 @@ func init() {
 	// 1. Загрузить конфигурацию из файла config.toml
 	fp, err := os.Open(CONFIG_FNAME)
 	if err != nil {
-		log.Fatalf("os.Open(%s): %v\n", CONFIG_FNAME, err)
+		log.Fatalf("os.Open: %v\n", err)
 	}
 	defer fp.Close()
 
