@@ -1,5 +1,5 @@
 # UML
-Datbase -> Model <- Router <- Client
+postgresql -> Datbase -> Model <- Router <- Client
 
 
 # Тесты

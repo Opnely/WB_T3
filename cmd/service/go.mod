@@ -1,4 +1,4 @@
-module github.com/opnely/WB_T3/cmd/service
+module github.com/Opnely/WB_T3/cmd/service
 
 go 1.18
 
