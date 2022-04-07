@@ -1,6 +1,6 @@
 // Интерфейс для манипуляции и передачи данных базы данных.
 
-package main
+package service
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	CONFIG_FNAME = "config.toml"
+	CONFIG_FNAME = "../../Configs/config.toml"
 	INFO_FMT     = `{"name": %q, "version": %q}`
 	MIN_ENTRIES  = 64 // начальный размер среза для считывания записей из бд
 )

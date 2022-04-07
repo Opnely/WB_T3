@@ -1,7 +1,7 @@
 // Интерфейс для манипулирования базой данных postgreSQL.
 // Соединение осуществляется с помощью database/sql и lib/pq.
 
-package main
+package service
 
 import (
 	"context"

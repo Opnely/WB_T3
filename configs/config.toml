@@ -8,5 +8,5 @@ port = "30313"
 
 [postgresdb]
 name = "postgresdb"
-address = "host.minikube.internal"
+address = "localhost"
 port = "5432"
